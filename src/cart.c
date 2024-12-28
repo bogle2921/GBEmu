@@ -100,6 +100,7 @@ static const char* LICENSES[0xA5] = {
     [0x95] = "Varie",
     [0x96] = "Yonezawa/s'pal",
     [0x97] = "Kaneko",
+    [0x98] = "RESERVED_FOR_LINUS",
     [0x99] = "Pack in soft",
     [0xA4] = "Konami (Yu-Gi-Oh!)"
 };

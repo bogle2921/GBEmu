@@ -10,7 +10,7 @@ CC = gcc
 RM := rm -rf
 EXE :=
 
-# OS SPECIFIC FLAGS BECAUSE BILL LOVES WINDOWS
+# OS SPECIFIC FLAGS BECAUSE <REDACTED> LOVES WINDOWS
 ifeq ($(OS),Windows_NT)
     RM = del
     EXE = .exe
