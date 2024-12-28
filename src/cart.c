@@ -1,3 +1,8 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <stdbool.h>
 #include "cart.h"
 
 static struct cartridge c;
@@ -129,7 +134,7 @@ bool load_cartridge(const char* cart){
     snprintf(c.filename, sizeof(c.filename), "%s", cart);
     FILE* rom_file = fopen(cart, "rb");
     if (!rom_file){
-        printf("Failed to open file\n");
+        printf("Error: Failed to open file\n");
         return false;
     }
 
@@ -147,7 +152,8 @@ bool load_cartridge(const char* cart){
     c.header = (struct rom_header*)(c.rom_data + 0x100);
     c.header->title[15] = 0;
 
-    printf("Loaded Cartridge: %s\n", c.header->title);
+    printf("Loading Cartridge...\n");
+    describe_cartridge(&c);
 
     // LOOP THROUGH CHECKSUM RANGE IN ROM DATA, NEGATIVE SUM - 1
     u16 x = 0;
@@ -161,4 +167,49 @@ bool load_cartridge(const char* cart){
     printf("Checksum: %2.2X (%s)\n", c.header->checksum, (x & 0xFF) ? "PASSED" : "FAILED");
 
     return true;
+}
+
+// LOGGING CART VALUES AFTER LOADING ROM DATA
+void describe_cartridge(const struct cartridge* cart) {
+    if (!cart || !cart->rom_data || !cart->header) {
+        printf("Error: Invalid cartridge data.\n");
+        return;
+    }
+
+    // GENERAL
+    printf("\n--- GENERAL ---\n");
+    printf("FILENAME: %s\n", cart->filename);
+    printf("ROM SIZE: %u BYTES\n", cart->rom_size);
+
+    // HEADER
+    printf("\n--- HEADER ---\n");
+    printf("TITLE: %s\n", cart->header->title);
+    printf("NEW LICENSE: 0x%04X\n", cart->header->license_new);
+    printf("GAME BOY FLAG: 0x%02X\n", cart->header->gb_flag);
+    printf("CARTRIDGE TYPE: 0x%02X\n", cart->header->type);
+    printf("ROM SIZE CODE: 0x%02X\n", cart->header->size_rom);
+    printf("RAM SIZE CODE: 0x%02X\n", cart->header->size_ram);
+    printf("DESTINATION CODE: 0x%02X\n", cart->header->dest);
+    printf("OLD LICENSE: 0x%02X\n", cart->header->license);
+    printf("VERSION: 0x%02X\n", cart->header->version);
+    printf("HEADER CHECKSUM: 0x%02X\n", cart->header->checksum);
+    printf("GLOBAL CHECKSUM: 0x%04X\n", cart->header->g_checksum);
+
+    // EXTRA
+    printf("\n--- EXTRA ---\n");
+
+    // THIS MIGHT BE A BMP IMAGE, BUT IM NOT SURE HOW ITS STRUCTURED
+    // MIGHT NOT EVEN BE A LOGO INTENDED FOR VIEWING BUT SOME TYPE OF ARBITRARY CHECKSUM MODIFIER
+    printf("LOGO (FIRST 16 BYTES):\n");
+    for (int i = 0; i < 16; i++) {
+        printf("%02X ", cart->header->logo[i]);
+    }
+    printf("...\n");
+
+    // I ASSUME WHERE THE GAME "STARTS"
+    printf("ENTRY POINT:\n");
+    for (int i = 0; i < 4; i++) {
+        printf("%02X ", cart->header->entry[i]);
+    }
+    printf("\n\n--- END ---\n\n");
 }
