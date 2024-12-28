@@ -28,4 +28,6 @@ struct cartridge{
 
 bool load_cartridge(const char* cart);
 void describe_cartridge(const struct cartridge* cart);
+u8 read_cart(u16 addr);
+void write_to_cart(u16 addr, u8 val);
 #endif

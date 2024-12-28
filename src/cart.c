@@ -213,3 +213,16 @@ void describe_cartridge(const struct cartridge* cart) {
     }
     printf("\n\n--- END ---\n\n");
 }
+
+u8 read_cart(u16 addr){
+    // dont worry about rom switching yet
+    return c.rom_data[addr];
+}
+
+void write_to_cart(u16 addr, u8 val){
+    // dont worry about rom switching yet
+    // so no writing until then
+    // placeholder
+    printf("placeholder\n");
+    exit(-1);
+}
