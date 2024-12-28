@@ -35,14 +35,14 @@ int main(int argc, char** argv){
         EMU_TITLE,
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
-        EMU_WIDTH, // USE THE CONFIG I GUESS
+        EMU_WIDTH,
         EMU_HEIGHT,
 
         // TODO: TRY OUT DIFFERENT SDL WIN OPTIONS, SDL_WINDOW_SHOWN ISNT ACTUALLY NEEDED
         SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN
     );
     
-    // EXIT CLEANLY ON FAILURE TO CREATE WINDOW, NEED TO CALL SDL QUIT BEFORE EXITING FROM HERE ON DOWN
+    // EXIT CLEANLY ON FAILURE TO CREATE WINDOW
     if (!window) {
         printf("Window creation failed: %s\n", SDL_GetError());
         SDL_Quit();
@@ -58,7 +58,7 @@ int main(int argc, char** argv){
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
     );
 
-    // EXIT CLEANLY ON FAILURE TO CREATE RENDERER, NEED TO CALL SDL DESTROY WINDOW + SDL QUIT BEFORE EXITING FROM HERE ON DOWN
+    // EXIT CLEANLY ON FAILURE TO CREATE RENDERER
     if (!renderer) {
         printf("Renderer creation failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
@@ -74,11 +74,11 @@ int main(int argc, char** argv){
         while(SDL_PollEvent(&event)){
             switch(event.type){
                 case SDL_QUIT:
-                    goto out; // DONT BREAK WHY YOU DO THAT
+                    goto out;
             }
         }
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // WHY DO YOU WANT INVISIBLE GBEMU
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
@@ -89,12 +89,8 @@ int main(int argc, char** argv){
         r.h = 40;
         SDL_RenderFillRect(renderer, &r);
 
-        // WE WERE SKIPPING THE ACTUAL FRAME RENDER - SCOPE THE DOCS:
-        // -> https://wiki.libsdl.org/SDL2/SDL_RenderPresent
+        // RENDER CURRENT FRAME
         SDL_RenderPresent(renderer);
-
-        // AFTER YEARS OF TIRELESSLY WRITING CODE, WE HAVE A BLACK WINDOW WITH A WHITE BOX IN THE TOP LEFT CORNER:
-        // -> https://imgur.com/a/xU1lDLx
     }
 
 out:
