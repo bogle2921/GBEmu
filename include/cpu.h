@@ -2,6 +2,7 @@
 #define CPU_H
 
 #include "config.h"
+#include "instructions.h"
 /*
 REGISTERS
 16-bit	Hi	Lo	Name/Function
@@ -40,6 +41,7 @@ struct cpu {
     u8 opcode;
     bool isHalted;
     bool isStepping;
+    struct instruction* inst;
 };
 
 #endif
