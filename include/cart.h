@@ -27,4 +27,5 @@ struct cartridge{
 };
 
 bool load_cartridge(const char* cart);
+void describe_cartridge(const struct cartridge* cart);
 #endif

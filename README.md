@@ -1,6 +1,10 @@
-# GB Emu
+# GBEmu
 
-This was created on Windows. Wild, I know.
+<div align="center">
+  <img src="./docs/promo.png" alt="GBEmu Promo Img" width="50%">
+</div>
+
+> This project was originally created on Windows 98 by Bandit. Yes, that is his real name. He's since upgraded to Windows Vista.
 
 ## Requirements
 

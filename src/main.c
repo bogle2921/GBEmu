@@ -1,26 +1,30 @@
 #include "SDL2/SDL.h"
 #include "gameboy.h"
 #include "cart.h"
+#include "config.h"
 
 int main(int argc, char** argv){
-    if(argc < 2){
-        printf("Usage: gb-emu.exe <rom>\n");
+    if (argc < 2){
+        printf("Usage: gb-emu <rom>\n");
         return -1;
     }
 
     const char* filename = argv[1];
     printf("Loading %s\n", filename);
 
-    /*if(! load_cartridge(filename)){
-        printf("Failed to load: %s\n", filename);
-        return -1;
-    }*/
-
-    if(!load_cartridge(filename)){
+    // VALIDATE + LOAD CART FROM ROMFILE - RETURN TRUE IF SUCCESS ELSE FALSE
+    if (!load_cartridge(filename)){
         printf("Failed to load: %s\n", filename);
         return -1;
     }
-    SDL_Init(SDL_INIT_EVERYTHING);
+
+    // START SDL - RETURN NEGATIVE INT ON FAILURE
+    if (SDL_Init(SDL_INIT_EVERYTHING) < 0) {
+        printf("SDL init failed: %s\n", SDL_GetError());
+        return -1;
+    } else {
+        printf("SDL init succeeded\n");
+    }
 
     struct gameboy gb;
     gb.running = true;
@@ -31,35 +35,71 @@ int main(int argc, char** argv){
         EMU_TITLE,
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
-        64,
-        32,
-        SDL_WINDOW_SHOWN);
+        EMU_WIDTH, // USE THE CONFIG I GUESS
+        EMU_HEIGHT,
+
+        // TODO: TRY OUT DIFFERENT SDL WIN OPTIONS, SDL_WINDOW_SHOWN ISNT ACTUALLY NEEDED
+        SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN
+    );
     
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_TEXTUREACCESS_TARGET);
+    // EXIT CLEANLY ON FAILURE TO CREATE WINDOW, NEED TO CALL SDL QUIT BEFORE EXITING FROM HERE ON DOWN
+    if (!window) {
+        printf("Window creation failed: %s\n", SDL_GetError());
+        SDL_Quit();
+        return -1;
+    } else {
+        printf("Window creation succeeded\n");
+    }
+
+ 
+    SDL_Renderer* renderer = SDL_CreateRenderer(
+        window, 
+        -1, 
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+    );
+
+    // EXIT CLEANLY ON FAILURE TO CREATE RENDERER, NEED TO CALL SDL DESTROY WINDOW + SDL QUIT BEFORE EXITING FROM HERE ON DOWN
+    if (!renderer) {
+        printf("Renderer creation failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return -1;
+    } else {
+        printf("Renderer creation succeeded\n");
+    }
+
 
     while(gb.running){
         SDL_Event event;
         while(SDL_PollEvent(&event)){
             switch(event.type){
                 case SDL_QUIT:
-                    goto out;
-                    break;
+                    goto out; // DONT BREAK WHY YOU DO THAT
             }
         }
 
-        SDL_SetRenderDrawColor(renderer, 0,0,0,0);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // WHY DO YOU WANT INVISIBLE GBEMU
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, 255,255,255,0);
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
         SDL_Rect r;
         r.x = 10;
         r.y = 10;
         r.w = 40;
         r.h = 40;
-        SDL_RenderFillRect(renderer, &r); 
+        SDL_RenderFillRect(renderer, &r);
+
+        // WE WERE SKIPPING THE ACTUAL FRAME RENDER - SCOPE THE DOCS:
+        // -> https://wiki.libsdl.org/SDL2/SDL_RenderPresent
+        SDL_RenderPresent(renderer);
+
+        // AFTER YEARS OF TIRELESSLY WRITING CODE, WE HAVE A BLACK WINDOW WITH A WHITE BOX IN THE TOP LEFT CORNER:
+        // -> https://imgur.com/a/xU1lDLx
     }
 
 out:
+    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    SDL_Quit();
     return 0;
 }

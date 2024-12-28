@@ -11,7 +11,7 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-#define EMU_TITLE "GameBoy Emu"
+#define EMU_TITLE "GBEmu"
 #define WINDOW_MULTI 5
 #define SCREEN_WIDTH 160
 #define SCREEN_HEIGHT 144
