@@ -9,6 +9,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -32,26 +33,27 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev
-
+    
     - name: Install SDL2 (macOS)
       if: matrix.os == 'macos-latest'
-      run: |
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-        brew update
-        brew install sdl2
+      uses: BrettDong/setup-sdl2-frameworks@main
+      with:
+        sdl2: latest
+        sdl2-ttf: latest
+        sdl2-image: 2.6.3
+        sdl2-mixer: none
+        sdl2-net: 2.2.0
 
     # BUILD USING MAKEFILE
     - name: Build
       shell: bash
       run: |
-        if [ "${{ matrix.os }}" = "macos-latest" ]; then
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-        fi
         make clean
         make all
 
     # UPLOAD ARTIFACTS
     - name: Upload Artifact
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
