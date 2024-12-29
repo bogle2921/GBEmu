@@ -2,6 +2,10 @@
 #include "gameboy.h"
 #include "cart.h"
 #include "config.h"
+#include "cpu.h"
+
+// STATIC GAMEBOY INSTANCE
+static struct gameboy gb = {0};
 
 int main(int argc, char** argv){
     if (argc < 2){
@@ -12,11 +16,15 @@ int main(int argc, char** argv){
     const char* filename = argv[1];
     printf("Loading %s\n", filename);
 
-    // VALIDATE + LOAD CART FROM ROMFILE - RETURN TRUE IF SUCCESS ELSE FALSE
+    // VALIDATE + LOAD CART FROM ROMFILE
     if (!load_cartridge(filename)){
         printf("Failed to load: %s\n", filename);
         return -1;
     }
+
+    // START CPU - AWAIT OPCODES
+    cpu_init();
+    printf("CPU initialized\n");
 
     // START SDL - RETURN NEGATIVE INT ON FAILURE
     if (SDL_Init(SDL_INIT_EVERYTHING) < 0) {
@@ -26,11 +34,11 @@ int main(int argc, char** argv){
         printf("SDL init succeeded\n");
     }
 
-    struct gameboy gb;
-    gb.running = true;
-    gb.paused = false;
-    gb.ticks = 0;   
+    // START GAMEBOY
+    gameboy_init();
+    printf("Gameboy initialized\n");
 
+    // CREATE INITIAL WINDOW
     SDL_Window *window = SDL_CreateWindow(
         EMU_TITLE,
         SDL_WINDOWPOS_UNDEFINED,
@@ -78,10 +86,23 @@ int main(int argc, char** argv){
             }
         }
 
+        // EXECUTE CPU INSTRUCTIONS FOR THIS FRAME
+        // TODO: WE NEED PROPER TIMING!
+        // -> https://gbdev.io/pandocs/Rendering.html?highlight=mhz
+        if (!gb.paused) {
+            // FROM DOCS: A “dot” = one 222 Hz (≅ 4.194 MHz) time unit
+            // SO WE NEED TO RUN MULTIPLE CPU STEPS PER FRAME
+            for (int i = 0; i < 69905; i++) {  // GUESTIMATE STEPS PER FRAME
+                cpu_step();
+            }
+        }
+
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
+        // PLACEHOLDER RENDERING - BLACK SCREEN W/ WHITE SQUARE IN CORNER
+        // TODO: TO HELP WITH DEBUG TILL WE GET TO RENDERING, DISPLAY CURRENT OPCODES + MISC DATA IN WINDOW TO SHOW SYNC
         SDL_Rect r;
         r.x = 10;
         r.y = 10;
@@ -98,4 +119,10 @@ out:
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
+}
+
+void gameboy_init() { // TODO: SHOULD POTENTIALLY ADD THIS TO CART.C OR NEW FILE
+    gb.running = true;
+    gb.paused = false;
+    gb.ticks = 0;  
 }

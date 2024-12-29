@@ -113,19 +113,6 @@ static const char* LICENSES[0xA5] = {
     [0xA4] = "Konami (Yu-Gi-Oh!)"
 };
 
-const char* get_license_name(){
-    if(c.header->license_new <= 0xA4){
-        return LICENSES[c.header->license];
-    }
-    return "unknown";
-}
-
-const char* get_cart_type() {
-    if(c.header->type < 0x22){
-        return ROMS[c.header->type];
-    }
-    return "unknown";
-}
 
 bool load_cartridge(const char* cart){
     printf("Loading Cartridge...\n");
@@ -197,7 +184,6 @@ bool load_cartridge(const char* cart){
     return true;
 }
 
-// LOGGING CART VALUES AFTER LOADING ROM DATA
 void describe_cartridge(const struct cartridge* cart) {
     if (!cart || !cart->rom_data || !cart->header) {
         printf("Error: Invalid cartridge data.\n");
