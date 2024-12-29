@@ -42,4 +42,4 @@ $(BIN_DIR)/gb-emu$(EXE): $(BUILD_DIR)/cart.o $(SRC_DIR)/main.c | $(BIN_DIR)
 # CLEAN UP
 .PHONY: clean
 clean:
-	$(RM) $(BUILD_DIR) $(BIN_DIR)
+	$(RM) $(BUILD_DIR) $(BIN_DIR) || true
