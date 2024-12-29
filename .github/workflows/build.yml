@@ -1,71 +1,78 @@
 name: Build GBEmu
-
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
+    branches: [ main ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - os: ubuntu-latest
-            cc: gcc
+            output: gb-emu
+            artifact: gb-emu-linux
           - os: macos-latest
-            cc: clang
+            output: gb-emu
+            artifact: gb-emu-macos
           - os: windows-latest
-            cc: x86_64-w64-mingw32-gcc
+            output: gb-emu.exe
+            artifact: gb-emu-windows
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Setup SDL2 dependencies (Linux)
+    # SETUP SDL2 FOR LINUX AND MACOS
+    - name: Install SDL2 (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev
 
-    - name: Setup SDL2 dependencies (macOS)
+    - name: Install SDL2 (macOS)
       if: matrix.os == 'macos-latest'
       run: |
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+        brew update
         brew install sdl2
 
-    - name: Setup SDL2 dependencies (Windows)
-      if: matrix.os == 'windows-latest'
+    # BUILD USING MAKEFILE
+    - name: Build
+      shell: bash
       run: |
-        choco install mingw
-        echo "SDL2 is expected in the repo's lib directory. Ensure the necessary .a files are present."
-
-    - name: Build emulator
-      env:
-        CC: ${{ matrix.cc }}
-      run: |
+        if [ "${{ matrix.os }}" = "macos-latest" ]; then
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+        fi
         make clean
         make all
 
-    - name: Archive build artifacts
-      if: matrix.os == 'windows-latest'
-      uses: actions/upload-artifact@v3
+    # UPLOAD ARTIFACTS
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: gb-emu-windows
-        path: bin/gb-emu.exe
+        name: ${{ matrix.artifact }}
+        path: bin/${{ matrix.output }}
 
-    - name: Archive build artifacts
-      if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v3
+  # SEPARATE JOB FOR RELEASES
+  release:
+    needs: build
+    
+    # ONLY BUILD RELEASE WHEN WE PUSH A TAG
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
       with:
-        name: gb-emu-linux
-        path: bin/gb-emu
-
-    - name: Archive build artifacts
-      if: matrix.os == 'macos-latest'
-      uses: actions/upload-artifact@v3
-      with:
-        name: gb-emu-macos
-        path: bin/gb-emu
+        files: |
+          gb-emu-linux/gb-emu
+          gb-emu-macos/gb-emu
+          gb-emu-windows/gb-emu.exe
