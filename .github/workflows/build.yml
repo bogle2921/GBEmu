@@ -15,9 +15,9 @@ jobs:
           - os: ubuntu-latest
             output: gb-emu
             artifact: gb-emu-linux
-          - os: macos-latest
-            output: gb-emu
-            artifact: gb-emu-macos
+          # - os: macos-latest
+          #   output: gb-emu
+          #   artifact: gb-emu-macos
           - os: windows-latest
             output: gb-emu.exe
             artifact: gb-emu-windows
@@ -33,16 +33,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libsdl2-dev
-    
-    - name: Install SDL2 (macOS)
-      if: matrix.os == 'macos-latest'
-      uses: BrettDong/setup-sdl2-frameworks@main
-      with:
-        sdl2: latest
-        sdl2-ttf: latest
-        sdl2-image: 2.6.3
-        sdl2-mixer: none
-        sdl2-net: 2.2.0
 
     # BUILD USING MAKEFILE
     - name: Build
@@ -76,5 +66,5 @@ jobs:
       with:
         files: |
           gb-emu-linux/gb-emu
-          gb-emu-macos/gb-emu
           gb-emu-windows/gb-emu.exe
+#          gb-emu-macos/gb-emu
