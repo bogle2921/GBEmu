@@ -1,7 +1,7 @@
 # GBEmu
 
 <div align="center">
-  <img src="./docs/promo.png" alt="GBEmu Promo Img" width="50%">
+  <img src="./docs/promo_2.png" alt="GBEmu Promo Img" width="75%">
 </div>
 
 > This project was originally created on Windows 98 by Bandit. Yes, that is his real name. He's since upgraded to Windows Vista.
