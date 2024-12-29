@@ -66,6 +66,24 @@ static void op_halt(void) {         // HALT
     CPU.isHalted = true;
 }
 
+static void op_jr_z(void) {         // JR Z, r8
+    int8_t offset = (int8_t)read_byte();
+    if (get_flag(FLAG_Z)) {
+        CPU.registers.pc += offset;
+    }
+}
+
+static void op_xor_a(void) {        // XOR A
+    // XOR OPS USE A REG
+    // A XOR A IS ALWAYS 0
+    CPU.registers.a = 0;
+
+    // SINCE 0, WE SET ZERO FLAG
+    set_flags(1, 0, 0, 0);
+}
+
+
+
 // -- OPCODE FN POINTER TABLE --
 // TODO: OBVIOUSLY FINISH IMPLEMENTING OP CODES, THERE ARE A LOT OF THEM
 
@@ -80,6 +98,8 @@ static void init_opcode_table(void) {
     opcode_table[0xC3] = op_jp_nz;
     opcode_table[0xFE] = op_cp_d8;
     opcode_table[0x76] = op_halt;
+    opcode_table[0x28] = op_jr_z;
+    opcode_table[0xAF] = op_xor_a;
 }
 
 void cpu_step() {
