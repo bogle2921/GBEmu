@@ -82,6 +82,11 @@ static void op_xor_a(void) {        // XOR A
     set_flags(1, 0, 0, 0);
 }
 
+static void op_jr(void) {           // JR r8
+    int8_t offset = (int8_t)read_byte();
+    CPU.registers.pc += offset;
+}
+
 
 
 // -- OPCODE FN POINTER TABLE --
@@ -100,6 +105,7 @@ static void init_opcode_table(void) {
     opcode_table[0x76] = op_halt;
     opcode_table[0x28] = op_jr_z;
     opcode_table[0xAF] = op_xor_a;
+    opcode_table[0x18] = op_jr;
 }
 
 void cpu_step() {
