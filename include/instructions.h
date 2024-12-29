@@ -4,15 +4,6 @@
 #include "config.h"
 // https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html
 
-struct instruction {
-    inst_type i_type;
-    reg_name reg1;
-    reg_name reg2;
-    conditional cond;
-    u8 val;
-    placement p_mode;
-};
-
 typedef enum{
     NONE, NOP, LD, INC, DEC, RLCA, ADD, RRCA, STOP,
     RLA, JR, RRA, DAA, CPL, SCF, CCF, HALT, ADC, SUB,
@@ -42,5 +33,17 @@ typedef enum{
     P_HL_INC_REG, P_HL_DEC_REG, P_REG_ADDR8, P_ADDR8_REG,
     P_HL_SP, P_D16, P_D8, P_D16_REG, P_MEM_D8, P_MEM, P_ADDR16_REG, P_REG_ADDR16
 } placement;
+
+struct instruction {
+    inst_type i_type;
+    reg_name reg1;
+    reg_name reg2;
+    conditional cond;
+    u8 val;
+    placement p_mode;
+};
+
+void cpu_step();
+void cpu_init();
 
 #endif

@@ -35,8 +35,14 @@ all: $(BUILD_DIR) $(BIN_DIR) $(BIN_DIR)/gb-emu$(EXE)
 $(BUILD_DIR)/cart.o: $(SRC_DIR)/cart.c | $(BUILD_DIR)
 	$(CC) $(FLAGS) $(INCLUDES) -c $< -o $@
 
+$(BUILD_DIR)/bus.o: $(SRC_DIR)/bus.c | $(BUILD_DIR)
+	$(CC) $(FLAGS) $(INCLUDES) -c $< -o $@
+
+$(BUILD_DIR)/instructions.o: $(SRC_DIR)/instructions.c | $(BUILD_DIR)
+	$(CC) $(FLAGS) $(INCLUDES) -c $< -o $@
+
 # MAKE EXECUTABLE
-$(BIN_DIR)/gb-emu$(EXE): $(BUILD_DIR)/cart.o $(SRC_DIR)/main.c | $(BIN_DIR)
+$(BIN_DIR)/gb-emu$(EXE): $(BUILD_DIR)/cart.o $(BUILD_DIR)/bus.o $(BUILD_DIR)/instructions.o $(SRC_DIR)/main.c | $(BIN_DIR)
 	$(CC) $(FLAGS) $(INCLUDES) $^ $(SDL_LIBS) -o $@
 	
 # CLEAN UP

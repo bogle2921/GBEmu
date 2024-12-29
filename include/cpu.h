@@ -21,6 +21,18 @@ Bit	Name	Explanation
 4	c	    Carry flag
 */
 
+// BIT MACROS FOR COMMON STUFF
+#define BIT(n) (1 << (n))
+#define BIT_SET(n, bit) ((n) |= BIT(bit))
+#define BIT_CLEAR(n, bit) ((n) &= ~BIT(bit))
+#define BIT_TEST(n, bit) ((n) & BIT(bit))
+
+// FLAGS HELPERS
+#define FLAG_Z BIT(7)
+#define FLAG_N BIT(6)
+#define FLAG_H BIT(5)
+#define FLAG_C BIT(4)
+
 struct cpu_registers {
     u8 a;
     u8 b;
@@ -35,7 +47,7 @@ struct cpu_registers {
 };
 
 struct cpu {
-    cpu_registers registers;
+    struct cpu_registers registers;
     u16 data_fetch;
     u16 memory_destination;
     u8 opcode;

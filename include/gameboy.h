@@ -9,4 +9,6 @@ struct gameboy {
     u64 ticks;
 };
 
+void gameboy_init();
+
 #endif

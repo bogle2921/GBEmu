@@ -1,3 +1,4 @@
+#include "cart.h"
 #include "bus.h"
 
 u8 read_from_bus(u16 addr){
