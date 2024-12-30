@@ -24,7 +24,9 @@ struct rom_header{      // Content of header bytes: https://gbdev.io/pandocs/The
 struct cartridge{
     char filename[1024];
     u32 rom_size;
-    u8* rom_data;
+    u8 *rom_data;
+    u8 *ram_data;
+    bool ram_enabled;
     struct rom_header* header;
 };
 
@@ -35,4 +37,6 @@ bool validate_checksum(const u8* rom_data, u8 expected_checksum);
 bool validate_global_checksum(const u8* rom_data, u32 rom_size);
 u8 read_cart(u16 addr);
 void write_to_cart(u16 addr, u8 val);
+u8 read_cart_ram(u16 addr);
+void write_cart_ram(u16 addr, u8 val);
 #endif

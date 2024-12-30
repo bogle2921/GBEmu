@@ -32,8 +32,10 @@ typedef uint64_t u64;
 #define ECHO_RAM 0xE000 //              E000	FDFF	Echo RAM (mirror of C000–DDFF)	Nintendo says use of this area is prohibited.
 #define OAM_START 0xFE00 //             FE00	FE9F	Object attribute memory (OAM)
 #define PROHIB_START 0xFEA0 //          FEA0	FEFF	Not Usable	                    Nintendo says use of this area is prohibited.
+#define HMEM_START 0xFF00 //            FF00    FFFF    General rng for higher memory ops (start)
 #define IO_REG 0xFF00 //                FF00	FF7F	I/O Registers
 #define HRAM 0xFF80 //                  FF80	FFFE	High RAM (HRAM)	
 #define IE_REG 0xFFFF //                FFFF	FFFF	Interrupt Enable register (IE)
+#define HMEM_END 0xFFFF //              FF00    FFFF    General rng for higher memory ops (end), includes above sections up to HMEM_START.
 
 #endif

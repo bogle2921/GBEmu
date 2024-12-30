@@ -1,59 +1,55 @@
 #ifndef CPU_H
 #define CPU_H
 
+#include <stdint.h>
+#include <stdbool.h>
 #include "config.h"
-#include "instructions.h"
-/*
-REGISTERS
-16-bit	Hi	Lo	Name/Function
-AF	    A	-	Accumulator & Flags
-BC	    B	C	BC
-DE	    D	E	DE
-HL	    H	L	HL
-SP	    -	-	Stack Pointer
-PC	    -	-	Program Counter/Pointer
 
-FLAGS Register - LSB of AF
-Bit	Name	Explanation
-7	z	    Zero flag
-6	n	    Subtraction flag (BCD)
-5	h	    Half Carry flag (BCD)
-4	c	    Carry flag
-*/
+// TYPES
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef int8_t i8;
+typedef uint32_t u32;
 
-// BIT MACROS FOR COMMON STUFF
-#define BIT(n) (1 << (n))
-#define BIT_SET(n, bit) ((n) |= BIT(bit))
-#define BIT_CLEAR(n, bit) ((n) &= ~BIT(bit))
-#define BIT_TEST(n, bit) ((n) & BIT(bit))
+// REGISTERS
+typedef struct {
+    u8 a, b, c, d, e, h, l, f;
+    u16 pc, sp;
+} registers;
 
-// FLAGS HELPERS
-#define FLAG_Z BIT(7)
-#define FLAG_N BIT(6)
-#define FLAG_H BIT(5)
-#define FLAG_C BIT(4)
-
-struct cpu_registers {
-    u8 a;
-    u8 b;
-    u8 c;
-    u8 d;
-    u8 e;
-    u8 f;
-    u8 h;
-    u8 l;
-    u16 sp;
-    u16 pc;
-};
-
-struct cpu {
-    struct cpu_registers registers;
-    u16 data_fetch;
-    u16 memory_destination;
+// CPU STATE
+typedef struct {
+    registers reg;
+    bool halted;
+    bool stopped;
+    bool stepping;
+    bool ime;           // INTERUPT MASTER ENABLE - ENABLES THE ABILITY TO INTERUPT CPU?
     u8 opcode;
-    bool isHalted;
-    bool isStepping;
-    struct instruction* inst;
-};
+    u32 cycles;
+} cpu;
+
+// FLAGS
+#define FLAG_Z (1 << 7)  // ZERO
+#define FLAG_N (1 << 6)  // SUBTRACT
+#define FLAG_H (1 << 5)  // HALF CARRY
+#define FLAG_C (1 << 4)  // CARRY
+
+// HELPERS
+#define SET_FLAG_Z(x) CPU.reg.f = (CPU.reg.f & ~FLAG_Z) | ((x) ? FLAG_Z : 0)
+#define SET_FLAG_N(x) CPU.reg.f = (CPU.reg.f & ~FLAG_N) | ((x) ? FLAG_N : 0)
+#define SET_FLAG_H(x) CPU.reg.f = (CPU.reg.f & ~FLAG_H) | ((x) ? FLAG_H : 0)
+#define SET_FLAG_C(x) CPU.reg.f = (CPU.reg.f & ~FLAG_C) | ((x) ? FLAG_C : 0)
+#define GET_FLAG_Z  ((CPU.reg.f >> 7) & 0x01)
+#define GET_FLAG_N  ((CPU.reg.f >> 6) & 0x01)
+#define GET_FLAG_H  ((CPU.reg.f >> 5) & 0x01)
+#define GET_FLAG_C  ((CPU.reg.f >> 4) & 0x01)
+#define GET_HIGH_BYTE(n) ((n >> 8) & 0xFF)
+#define GET_LOW_BYTE(n) (n & 0xFF)
+#define MAKE_WORD(h, l) ((h << 8) | l)
+
+
+// SETUP AND CYCLE CPU
+void cpu_init(void);
+void cpu_step(void);
 
 #endif

@@ -1,51 +1,65 @@
-INCLUDES := -I ./include
-FLAGS := -g
+# CORE VARIABLES
+CC := gcc
+RM := rm -rf
+MKDIR := mkdir -p
+
+# DIRECTORIES
+SRC_DIR := src
 BUILD_DIR := build
 BIN_DIR := bin
-SRC_DIR := src
 LIB_DIR := lib
 ROM_DIR := roms
-SDL_LIBS := -lSDL2
-CC = gcc
-RM := rm -rf
-EXE :=
+INCLUDE_DIR := include
 
-# OS SPECIFIC FLAGS BECAUSE <REDACTED> LOVES WINDOWS
+# FILES
+SRCS := $(wildcard $(SRC_DIR)/*.c)
+OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+TARGET := gb-emu
+
+# COMPILER FLAGS
+INCLUDES := -I $(INCLUDE_DIR)
+CFLAGS := -Wall -Wextra
+LDFLAGS := -lSDL2
+
+# BUILD CONFIGS
+DEBUG_FLAGS := -g -DDEBUG
+RELEASE_FLAGS := -O2
+SANITIZE_FLAGS := -fsanitize=address -fsanitize=undefined
+
+# OS SPECIFIC CONFIG
 ifeq ($(OS),Windows_NT)
-    RM = del
-    EXE = .exe
-    SDL_LIBS = -L $(LIB_DIR) -lmingw32 -lSDL2main -lSDL2
+    RM := del
+    TARGET := $(TARGET).exe
+    LDFLAGS := -L $(LIB_DIR) -lmingw32 -lSDL2main -lSDL2
 endif
 
-# ENSURE REQUIRED DIRECTORIES EXIST
-$(BUILD_DIR):
-	@mkdir -p $(BUILD_DIR)
+# BUILD TARGETS
+.PHONY: all clean debug release sanitize dirs
 
-$(BIN_DIR):
-	@mkdir -p $(BIN_DIR)
+all: release
 
-$(ROM_DIR):
-	@mkdir -p $(ROM_DIR)
+debug: CFLAGS += $(DEBUG_FLAGS)
+debug: dirs $(BIN_DIR)/$(TARGET)
 
-# DEFAULT TARGET
-.PHONY: all
-all: $(BUILD_DIR) $(BIN_DIR) $(BIN_DIR)/gb-emu$(EXE)
+release: CFLAGS += $(RELEASE_FLAGS)
+release: dirs $(BIN_DIR)/$(TARGET)
 
-# OBJECT FILES
-$(BUILD_DIR)/cart.o: $(SRC_DIR)/cart.c | $(BUILD_DIR)
-	$(CC) $(FLAGS) $(INCLUDES) -c $< -o $@
+sanitize: CFLAGS += $(DEBUG_FLAGS) $(SANITIZE_FLAGS)
+sanitize: LDFLAGS += $(SANITIZE_FLAGS)
+sanitize: dirs $(BIN_DIR)/$(TARGET)
 
-$(BUILD_DIR)/bus.o: $(SRC_DIR)/bus.c | $(BUILD_DIR)
-	$(CC) $(FLAGS) $(INCLUDES) -c $< -o $@
+# CREATE DIRECTORIES
+dirs:
+	@$(MKDIR) $(BUILD_DIR) $(BIN_DIR) $(ROM_DIR)
 
-$(BUILD_DIR)/instructions.o: $(SRC_DIR)/instructions.c | $(BUILD_DIR)
-	$(CC) $(FLAGS) $(INCLUDES) -c $< -o $@
+# COMPILE OBJECTS
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# MAKE EXECUTABLE
-$(BIN_DIR)/gb-emu$(EXE): $(BUILD_DIR)/cart.o $(BUILD_DIR)/bus.o $(BUILD_DIR)/instructions.o $(SRC_DIR)/main.c | $(BIN_DIR)
-	$(CC) $(FLAGS) $(INCLUDES) $^ $(SDL_LIBS) -o $@
-	
-# CLEAN UP
-.PHONY: clean
+# LINK EXECUTABLE
+$(BIN_DIR)/$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+# CLEANUP
 clean:
 	$(RM) $(BUILD_DIR) $(BIN_DIR) || true
