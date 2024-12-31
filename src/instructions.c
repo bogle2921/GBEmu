@@ -26,7 +26,9 @@ static inline bool get_flag(u8 flag) {
 
 // -- MEMORY OPERATIONS --
 static inline u8 read_byte() {
-    return read_from_bus(CPU.registers.pc++);
+    u8 valueRead = read_from_bus(CPU.registers.pc++);
+    printf("Value read from bus: 0x%02X\n", valueRead);
+    return valueRead;
 }
 
 static inline u16 read_word() {
@@ -207,7 +209,7 @@ static void op_cb(void){
     switch(operation){
         case 1:
             // BIT
-            set_flags(!(reg_val & (1 << bit)), 0, 1, reg_val & (1 << bit));
+            set_flags(!reg_val, 0, 1, reg_val & (1 << bit));
             return;
         case 2:
             // RES
@@ -239,8 +241,11 @@ static void op_cb(void){
             case 5:
                 // SRA
                 return;
-            case 6:
-                // SWAP
+            case 6:{ // SWAP
+                reg_val = ((reg_val & 0xF0) >> 4) | ((reg_val & 0xF) << 4);
+                set_register(reg, reg_val);
+                set_flags(reg_val == 0, 0, 0, 0);
+            }
                 return;
             case 7:
                 // SRL
@@ -280,12 +285,27 @@ static void init_opcode_table(void) {
     opcode_table[0xCB] = op_cb;
 }
 
+static void describe_step(){
+    printf("\n\n---New Operation---\n");
+    printf("Opcode: 0x%02X\n", CPU.opcode);
+    printf("Registers before operation:\n");
+    printf("Register A: 0x%02X\n", CPU.registers.a);
+    printf("Register B: 0x%02X\n", CPU.registers.b);
+    printf("Register C: 0x%02X\n", CPU.registers.c);
+    printf("Register D: 0x%02X\n", CPU.registers.d);
+    printf("Register E: 0x%02X\n", CPU.registers.e);
+    printf("Register F: 0x%02X\n", CPU.registers.f);
+    printf("Register H: 0x%02X\n", CPU.registers.h);
+    printf("Register L: 0x%02X\n\n", CPU.registers.l);
+    printf("Register PC: 0x%02X\n\n", CPU.registers.pc);
+}
 void cpu_step() {
     if (CPU.isHalted) {
         return;
     }
 
     CPU.opcode = read_byte();
+    describe_step();
     opcode_table[CPU.opcode]();
 }
 
