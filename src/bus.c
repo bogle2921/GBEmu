@@ -27,6 +27,11 @@ u8 read_io(u16 addr) {
             // INTERRUPT FLAGS
             return io_registers[addr - IO_REG];
 
+        case SB_REG:
+        case SC_REG:
+            // LINK CABLE (SERIAL TRANSFER DATA, NOT REALLY NEEDED)
+            return io_registers[addr - IO_REG];
+
         case LCDC_REG:
         case STAT_REG:
         case SCY_REG:
@@ -93,6 +98,11 @@ void write_io(u16 addr, u8 val) {
 
         case IF_REG:
             // INTERRUPT FLAGS
+            io_registers[addr - IO_REG] = val;
+            break;
+        case SB_REG:
+        case SC_REG:
+            // LINK CABLE (SERIAL TRANSFER DATA, NOT REALLY NEEDED)
             io_registers[addr - IO_REG] = val;
             break;
 
