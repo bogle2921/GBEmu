@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
 #include <stdbool.h>
 #include "cart.h"
 
@@ -164,9 +163,9 @@ bool load_cartridge(const char* cart){
     // NULL TERMINATE TITLE
     c.header->title[15] = '\0';
 
-    /* UNCOMMENT FOR NEWER TARGET 
+    /* UNCOMMENT FOR NEWER TARGET
     c.header->man_code[3] = '\0'; */
-    
+
     // LOG CONTENTS OF LOADED CARTRIDGE
     describe_cartridge(&c);
 
@@ -230,7 +229,7 @@ bool validate_header(const struct rom_header* header) {
     // MINIMUM ROM FILE SIZE
     const size_t MIN_ROM_SIZE = 0x0150;
     if (c.rom_size < MIN_ROM_SIZE) {
-        fprintf(stderr, "Error: ROM file is too small (size: %lu bytes)\n", c.rom_size);
+        fprintf(stderr, "Error: ROM file is too small (size: %u bytes)\n", c.rom_size);
         return false;
     }
 
@@ -309,15 +308,41 @@ bool validate_global_checksum(const u8* rom_data, u32 rom_size) {
     return true;
 }
 
-u8 read_cart(u16 addr){
-    // dont worry about rom switching yet
-    return c.rom_data[addr];
+u8 read_cart(u16 addr) {
+    if (addr < ROM_BANK) {
+        return c.rom_data[addr];  // FIXED BANK
+    } else {
+        // TODO: HANDLE BANK SWITCHING WHEN IMPLEMENTED
+        return c.rom_data[addr];  // RN ONLY RETURNS FROM BANK 1
+    }
 }
 
-void write_to_cart(u16 addr, u8 val){
-    // dont worry about rom switching yet
-    // so no writing until then
-    // placeholder
-    printf("placeholder\n");
-    exit(-1);
+void write_to_cart(u16 addr, u8 val) {
+    // TODO: HANDLE MBC (MEMORY BANK CONTROLLER) OPERATIONS (USED FOR BANK SWITCHING)
+}
+
+u8 read_cart_ram(u16 addr) {
+    if (!c.ram_enabled) {
+        return 0xFF;    // IS DISABLED
+    }
+    
+    if (!c.ram_data) {
+        return 0xFF;    // NONE PRESENT
+    }
+
+    // TODO: HANDLE RAM BANKING WHEN IMPLEMENTED
+    return c.ram_data[addr];
+}
+
+void write_cart_ram(u16 addr, u8 val) {
+    if (!c.ram_enabled) {
+        return;         // IS DISABLED
+    }
+    
+    if (!c.ram_data) {
+        return;         // NONE PRESENT
+    }
+
+    // TODO: HANDLE RAM BANKING WHEN IMPLEMENTED
+    c.ram_data[addr] = val;
 }
