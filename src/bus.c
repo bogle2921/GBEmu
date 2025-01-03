@@ -1,6 +1,6 @@
 #include "cart.h"
 #include "bus.h"
-
+#include "ppu.h"
 
 // VIRTUALIZED MEMORY (OUR RAM)
 static u8 vram[0x2000];         // 8KB VRAM
@@ -164,7 +164,7 @@ u8 read_from_bus(u16 addr) {
     
     // VRAM (0x8000 - 0x9FFF)
     if (addr < RAM_START) {
-        return vram[addr - VRAM_START];
+        return vram_read(addr); // char data
     }
     
     // EXTERNAL RAM (0xA000 - 0xBFFF)
@@ -184,7 +184,10 @@ u8 read_from_bus(u16 addr) {
     
     // OAM (0xFE00 - 0xFE9F)
     if (addr < PROHIB_START) {
-        return oam[addr - OAM_START];
+        if(dma_tx()){
+            return 0xFF;
+        }
+        return oam_read(addr);
     }
     
     // PROHIBITED (0xFEA0 - 0xFEFF)
@@ -215,8 +218,7 @@ void write_to_bus(u16 addr, u8 val) {
     
     // VRAM (0x8000 - 0x9FFF)
     if (addr < RAM_START) {
-        vram[addr - VRAM_START] = val;
-        return;
+        vram_write(addr, val);
     }
     
     // EXTERNAL RAM (0xA000 - 0xBFFF)
@@ -239,7 +241,10 @@ void write_to_bus(u16 addr, u8 val) {
     
     // OAM (0xFE00 - 0xFE9F)
     if (addr < PROHIB_START) {
-        oam[addr - OAM_START] = val;
+        if(dma_tx()){
+            return;
+        }
+        oam_write(addr, val);
         return;
     }
     

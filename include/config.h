@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <windows.h> // unistd.h for linux
 
 typedef uint8_t u8;
 typedef uint16_t u16;

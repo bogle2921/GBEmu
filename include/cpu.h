@@ -24,6 +24,8 @@ typedef struct {
     bool stopped;
     bool stepping;
     bool ime;           // INTERUPT MASTER ENABLE - ENABLES THE ABILITY TO INTERUPT CPU?
+    u8 intrupt_flags;
+    u8 ie_reg;
     u8 opcode;
     u32 cycles;
 } cpu;
@@ -52,4 +54,7 @@ typedef struct {
 void cpu_init(void);
 void cpu_step(void);
 
+registers* get_registers();
+u8 get_int_flags();
+void set_int_flags(u8 val);
 #endif

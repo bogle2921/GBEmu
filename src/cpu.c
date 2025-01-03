@@ -1450,3 +1450,14 @@ void cpu_step(void) {
     printf("H: 0x%02X  L: 0x%02X\n", CPU.reg.h, CPU.reg.l);
     #endif
 }
+
+registers* get_registers(){
+    return &CPU.reg;
+}
+
+u8 get_int_flags(){
+    return CPU.intrupt_flags;
+}
+void set_int_flags(u8 val){
+    CPU.intrupt_flags = val;
+}

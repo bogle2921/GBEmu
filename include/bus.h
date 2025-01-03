@@ -2,6 +2,7 @@
 #define BUS_H
 
 #include "config.h"
+#include "dma.h"
 
 // IO REGISTERS
 #define P1_REG      0xFF00  // JOYPAD

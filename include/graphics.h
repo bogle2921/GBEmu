@@ -1,4 +1,10 @@
+#ifndef GRAPHICS_H
+#define GRAPHICS_H
 
+#include "config.h"
+#include "bus.h"
+#include "gameboy.h"
+/*
 // MEASURED IN 8x8 TILES, SO 80x80
 #define TW 8
 #define TH 8
@@ -13,3 +19,9 @@ struct pixel_sq {
 struct tile {
     struct pixel_sq pixels[TH][TW];
 };
+*/
+void ui_init();
+void ui_event_handler();
+void ui_update();
+
+#endif
