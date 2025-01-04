@@ -1,9 +1,11 @@
 #ifndef GRAPHICS_H
 #define GRAPHICS_H
 
+#include <SDL2/SDL.h>
 #include "config.h"
 #include "bus.h"
 #include "gameboy.h"
+
 /*
 // MEASURED IN 8x8 TILES, SO 80x80
 #define TW 8

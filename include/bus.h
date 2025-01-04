@@ -3,6 +3,8 @@
 
 #include "config.h"
 #include "dma.h"
+#include "cart.h"
+#include "ppu.h"
 
 // IO REGISTERS
 #define P1_REG      0xFF00  // JOYPAD

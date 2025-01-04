@@ -2,15 +2,11 @@
 #define CPU_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include "config.h"
-#include "gameboy.h"
-
-// TYPES
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef int8_t i8;
-typedef uint32_t u32;
+#include "bus.h"
+// #include "gameboy.h"
 
 // REGISTERS
 typedef struct {
@@ -58,4 +54,5 @@ void cpu_step(void);
 registers* get_registers();
 u8 get_int_flags();
 void set_int_flags(u8 val);
+
 #endif

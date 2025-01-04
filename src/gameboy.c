@@ -25,7 +25,7 @@ void gameboy_init() {
 
 void run_gb() {
     while(!GB.die){
-        Sleep(1000); // usleep(1000) for linux
+        usleep(1000); // usleep(1000) for linux
         ui_event_handler();
         ui_update();
 

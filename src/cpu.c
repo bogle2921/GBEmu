@@ -1,6 +1,4 @@
 #include "cpu.h"
-#include "bus.h"
-#include <stdio.h>
 
 // STATIC CPU INSTANCE
 static cpu CPU = {0};
@@ -20,7 +18,7 @@ static u8* const REGISTERS[] = {
 
 static inline u8 read_byte(void) {
     u8 val = read_from_bus(CPU.reg.pc++);
-    gb_cycles(1);
+    //gb_cycles(1);
     return val;
 }
 

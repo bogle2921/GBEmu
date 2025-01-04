@@ -2,6 +2,7 @@
 #define TIMER
 
 #include "config.h"
+#include "cpu.h"
 #include "interrupt.h"
 
 typedef struct {
@@ -9,7 +10,7 @@ typedef struct {
     u8 tima;
     u8 tma;
     u8 tac;
-} timer_struct;
+} timer_bus ;
 
 void timer_init();
 void timer_tick();

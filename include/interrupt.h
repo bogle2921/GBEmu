@@ -1,11 +1,13 @@
 #ifndef INTERRUPT_H
 #define INTERRUPT_H
 
-#include "config.h"
-#include "cpu.h"
-#include "stack.h"
 
-typedef enum{
+#include "config.h"
+#include "stack.h"
+#include "cpu.h"
+
+
+typedef enum {
     INT_VBLANK = 1,
     INT_LCD = 2,
     INT_TIMER = 4,

@@ -21,7 +21,7 @@ struct ppu {
 };
 
 void init_ppu();
-void tick_ppu();
+void ppu_tick();
 
 void oam_write(u16 addr, u8 val);
 u8 oam_read(u16 addr);

@@ -1,8 +1,8 @@
 #ifndef STACK_H
 #define STACK_H
 
-#include "config.h"
 #include "cpu.h"
+#include "config.h"
 #include "bus.h"
 
 void stack_push8(u8 val);

@@ -1,5 +1,4 @@
 #include "io.h"
-#include "config.h"
 
 static char serial_data[2];
 

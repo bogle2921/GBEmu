@@ -1,10 +1,12 @@
 #include "timer.h"
 
-static timer_struct timer = {0};
+static timer_bus timer = {0};
 
-timer_struct *get_timer(){
+timer_bus *get_timer(){
     return &timer;
 }
+
+void interrupt_req(interrupts i) {}
 
 void timer_init(){
     timer.div = 0xAC00;
@@ -34,7 +36,7 @@ void timer_tick(){
         timer.tima++;
         if(timer.tima == 0xFF){
             timer.tima = timer.tma;
-            //interrupt_req(INT_TIMER);
+            interrupt_req(INT_TIMER);
         }
     }
 }
