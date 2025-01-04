@@ -16,6 +16,7 @@ bool check_interrupt(cpu* CPU, u16 addr, interrupts i){
     }
     return false;
 }
+
 void handle_interrupts(cpu* CPU){
     if(check_interrupt(CPU, 0x40, INT_VBLANK)){
 

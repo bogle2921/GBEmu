@@ -1,7 +1,5 @@
 #include "graphics.h"
 
-#include <SDL2/SDL.h>
-
 SDL_Window *window;
 SDL_Renderer *renderer;
 SDL_Texture *texture;

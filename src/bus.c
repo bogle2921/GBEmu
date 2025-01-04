@@ -1,6 +1,4 @@
-#include "cart.h"
 #include "bus.h"
-#include "ppu.h"
 
 // VIRTUALIZED MEMORY (OUR RAM)
 static u8 vram[0x2000];         // 8KB VRAM

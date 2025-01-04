@@ -3,7 +3,7 @@
 static struct ppu PPU = {0};
 
 void init_ppu(){}
-void tick_ppu(){}
+void ppu_tick(){}
 
 void oam_write(u16 addr, u8 val){
     if(addr >= OAM_START){

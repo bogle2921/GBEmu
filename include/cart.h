@@ -1,6 +1,10 @@
 #ifndef CART_H
 #define CART_H
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include "config.h"
 
 struct rom_header{      // Content of header bytes: https://gbdev.io/pandocs/The_Cartridge_Header.html

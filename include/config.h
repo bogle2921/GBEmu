@@ -5,12 +5,13 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h> // unistd.h for linux
+#include <unistd.h> // unistd.h for linux
 
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef int8_t i8;
 
 #define EMU_TITLE "GBEmu"
 #define WINDOW_MULTI 5
