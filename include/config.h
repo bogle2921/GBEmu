@@ -22,6 +22,10 @@ typedef uint64_t u64;
 #define MAIN_RAM 8192
 #define VIDEO_RAM 8192
 
+#define BIT_TST(b, n) ((b & (1 << n)) ? 1 : 0)
+#define BIT_ON(b, n) { b |= (1 << n);}
+#define BIT_OFF(b, n) { b &= ~(1 << n);}
+
 /*                                                          MEMORY MAP
                                         Start   End     Description                     Notes                                               */
 #define ROM_START 0x0000 //             0000	3FFF	16 KiB ROM bank 00	            From cartridge, usually a fixed bank

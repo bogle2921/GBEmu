@@ -28,6 +28,21 @@ void run_gb() {
         Sleep(1000); // usleep(1000) for linux
         ui_event_handler();
         ui_update();
+
+        for (int i = 0; i < 69905; i++) {  // GUESTIMATE STEPS PER FRAME
+            cpu_step();
+        }
     }
 }
 
+// timer is 4x per cpu cycle, dma is once per cycle
+void gb_cycles(int cycles){
+    for(int i =0; i < cycles; i++){
+        for(int j = 0; j < 4; j++){
+            GB.ticks++;
+            timer_tick();
+            ppu_tick();
+        }
+        dma_tick();
+    }
+}

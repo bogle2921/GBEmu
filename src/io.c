@@ -3,8 +3,6 @@
 
 static char serial_data[2];
 
-u8 ly = 0;
-
 u8 io_read(u16 addr) {
     if (addr == 0xFF01) {
         return serial_data[0];
@@ -16,7 +14,7 @@ u8 io_read(u16 addr) {
 
     
     if (addr >= 0xFF04 && addr <= 0xFF07) {
-        // return timer value
+        return timer_read(addr);
     }
     
     if (addr == 0xFF0F) {
@@ -24,8 +22,8 @@ u8 io_read(u16 addr) {
     }
     
 
-    if (addr == 0xFF44) {
-        return ly++;
+    if (addr >= 0xFF40 && addr <= 0xFF4B) {
+        return lcd_read(addr);
     }
 
     printf("UNSUPPORTED bus_read(%04X)\n", addr);
@@ -45,18 +43,20 @@ void io_write(u16 addr, u8 val) {
 
     
     if (addr >= 0xFF04 && addr <= 0xFF07) {
-        // write timer value
+        timer_write(addr, val);
+        return;
     }
     
 
     if (addr == 0xFF0F) {
         set_int_flags(val);
+        return;
     }
     
 
-    if (addr == 0xFF46) {
-        dma_start(val);
-        printf("DMA START!\n");
+    if (addr >= 0xFF40 && addr <= 0xFF4B) {
+        lcd_write(addr, val);
+        return;
     }
 
     printf("UNSUPPORTED bus_write(%04X)\n", addr);

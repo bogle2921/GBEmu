@@ -16,6 +16,7 @@ void gameboy_init();
 gameboy* get_gb();
 void run_gb();
 void gameboy_init();
+void gb_cycles(int cycles);
 
 
 #endif

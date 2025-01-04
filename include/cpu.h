@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "config.h"
+#include "gameboy.h"
 
 // TYPES
 typedef uint8_t u8;
@@ -27,7 +28,7 @@ typedef struct {
     u8 intrupt_flags;
     u8 ie_reg;
     u8 opcode;
-    u32 cycles;
+    //u32 cycles;
 } cpu;
 
 // FLAGS
