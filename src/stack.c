@@ -1,3 +1,4 @@
+#include "logger.h"
 #include "stack.h"
 
 void stack_push8(u8 val){

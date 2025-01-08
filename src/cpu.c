@@ -1,4 +1,13 @@
+#include "logger.h"
 #include "cpu.h"
+
+/*
+THIS FILE IS ALSO A BIT MUCH.
+OP-CODES WERE DONE IN A REALLY WEIRD WAY WITH SKELETON FIRST,
+THEN ADDED MEAT ON BONES, BUT COMMENTED OUT SKELETON. TODO: CLEAN?
+VERY MUCH DOUBT EVERYTHING IS WORKING AS GB INTENDS.
+*/
+
 
 // STATIC CPU INSTANCE
 static cpu CPU = {0};
@@ -18,14 +27,15 @@ static u8* const REGISTERS[] = {
 
 static inline u8 read_byte(void) {
     u8 val = read_from_bus(CPU.reg.pc++);
-    //gb_cycles(1);
     return val;
 }
 
 static inline u16 read_word(void) {
-    u16 word = read_from_bus(CPU.reg.pc++) |
-              (read_from_bus(CPU.reg.pc++) << 8);
-    return word;
+    u16 lo = read_from_bus(CPU.reg.pc);
+    CPU.reg.pc++;
+    u16 hi = read_from_bus(CPU.reg.pc);
+    CPU.reg.pc++;
+    return (hi << 8) | lo;
 }
 
 // GET/SET REG OR HL CONDITIONALLY
@@ -55,7 +65,7 @@ static void set_reg_or_hl(u8 reg_idx, u8 value) {
 // ------------------------------------- NO OP -------------------------------------
 
 static void op_nop(void) {                           // NOP
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // ---------------------------------- 8-BIT LOADS ----------------------------------
@@ -69,16 +79,16 @@ static void ld_r_r(void) {
     if (src_reg == 0x06) {
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
         *REGISTERS[dst_reg] = read_from_bus(hl);
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
         //gb_cycles(2);
     } else if (dst_reg == 0x06) {
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
         write_to_bus(hl, *REGISTERS[src_reg]);
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
         //gb_cycles(2);
     } else {
         *REGISTERS[dst_reg] = *REGISTERS[src_reg];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
         //gb_cycles(1);
     }
 }
@@ -93,12 +103,10 @@ static void ld_r_n(void) {
     if (dst_reg == 0x06) {  // WE HANDLE MOST LOAD HL'S HERE
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
         write_to_bus(hl, n);
-        //CPU.cycles = 12;
-        //gb_cycles(3);
+        CPU.cycles = 12;
     } else {
         *REGISTERS[dst_reg] = n;
-        //CPU.cycles = 8;
-        //gb_cycles(2);
+        CPU.cycles = 8;
     }
 }
 
@@ -106,14 +114,13 @@ static void ld_r_n(void) {
 static void ld_a_bc(void) {
     u16 addr = MAKE_WORD(CPU.reg.b, CPU.reg.c); // BC
     CPU.reg.a = read_from_bus(addr);
-    //CPU.cycles = 8;
-    //gb_cycles(2);
+    CPU.cycles = 8;
 }
 // static void ld_a_de(void) { CPU.cycles = 8; }     // LD A,(DE) - LOAD A FROM MEMORY POINTED AT BY DE
 static void ld_a_de(void) {
     u16 addr = MAKE_WORD(CPU.reg.d, CPU.reg.e); // DE
     CPU.reg.a = read_from_bus(addr);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 
 }
 
@@ -121,54 +128,54 @@ static void ld_a_de(void) {
 static void ld_a_nn(void) {
     u16 addr = read_word(); // I THINK NN WOULD REFER TO THE IMMEDIATE 16 BIT VALUE
     CPU.reg.a = read_from_bus(addr);
-    //CPU.cycles = 16;
+    CPU.cycles = 16;
 }
 
 // static void ld_bc_a(void) { CPU.cycles = 8; }     // LD (BC),A - STORE A INTO MEMORY POINTED BY BC
 static void ld_bc_a(void) {
     u16 addr = MAKE_WORD(CPU.reg.b, CPU.reg.c);
     write_to_bus(addr, CPU.reg.a);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void ld_de_a(void) { CPU.cycles = 8; }     // LD (DE),A - STORE A INTO MEMORY POINTED BY DE
 static void ld_de_a(void) {
     u16 addr = MAKE_WORD(CPU.reg.d, CPU.reg.e);
     write_to_bus(addr, CPU.reg.a);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void ld_nn_a(void) { CPU.cycles = 16; }    // LD (nn),A - STORE A INTO DIRECT MEMORY ADDRESS
 static void ld_nn_a(void) {
     u16 addr = read_word();
     write_to_bus(addr, CPU.reg.a);
-    //CPU.cycles = 16;
+    CPU.cycles = 16;
 }
 
 // static void ld_a_ff_n(void) { CPU.cycles = 12; }  // LDH A,(n) - LOAD A FROM HIGH MEM RNG OFFSET n (FF00+n)
 static void ld_a_ff_n(void) {
     u8 offset = read_byte(); // N WOULD BE THE FIRST IMMEDIATE 8 BIT VALUE
-    CPU.reg.a = read_from_bus(HMEM_START + offset); // HIGH MEM RNG STARTS AT FF00, SEE CONFIG.H
-    //CPU.cycles = 12;
+    CPU.reg.a = read_from_bus(IO_START + offset); // HIGH MEM RNG STARTS AT FF00, SEE CONFIG.H
+    CPU.cycles = 12;
 }
 
 // static void ld_ff_n_a(void) { CPU.cycles = 12; }  // LDH (n),A - STORE A INTO HIGH MEM RNG OFFSET n (FF00+n)
 static void ld_ff_n_a(void) {
     u8 offset = read_byte();
-    write_to_bus(HMEM_START + offset, CPU.reg.a);
-    //CPU.cycles = 12;
+    write_to_bus(IO_START + offset, CPU.reg.a);
+    CPU.cycles = 12;
 }
 
 // static void ld_a_ff_c(void) { CPU.cycles = 8; }   // LD A,(C) - LOAD A FROM HIGH MEM RNG OFFSET C (FF00+C)
 static void ld_a_ff_c(void) {
-    CPU.reg.a = read_from_bus(HMEM_START + CPU.reg.c);
-    //CPU.cycles = 8;
+    CPU.reg.a = read_from_bus(IO_START + CPU.reg.c);
+    CPU.cycles = 8;
 }
 
 // static void ld_ff_c_a(void) { CPU.cycles = 8; }   // LD (C),A - STORE A INTO HIGH MEM RNG OFFSET C (FF00+C)
 static void ld_ff_c_a(void) {
-    write_to_bus(HMEM_START + CPU.reg.c, CPU.reg.a);
-    //CPU.cycles = 8;
+    write_to_bus(IO_START + CPU.reg.c, CPU.reg.a);
+    CPU.cycles = 8;
 }
 
 // static void ldi_hl_a(void) { CPU.cycles = 8; }    // LDI (HL),A - LOAD A *TO* HL AND *INCR* HL
@@ -178,7 +185,7 @@ static void ldi_hl_a(void) {
     hl++;
     CPU.reg.h = GET_HIGH_BYTE(hl);
     CPU.reg.l = GET_LOW_BYTE(hl);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void ldi_a_hl(void) { CPU.cycles = 8; }    // LDI A,(HL) - LOAD A *FROM* HL AND *INCR* HL
@@ -188,7 +195,7 @@ static void ldi_a_hl(void) {
     hl++;
     CPU.reg.h = GET_HIGH_BYTE(hl);
     CPU.reg.l = GET_LOW_BYTE(hl);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void ldd_hl_a(void) { CPU.cycles = 8; }    // LDD (HL),A - LOAD A *TO* HL AND *DECR* HL
@@ -198,7 +205,7 @@ static void ldd_hl_a(void) {
     hl--;
     CPU.reg.h = GET_HIGH_BYTE(hl);
     CPU.reg.l = GET_LOW_BYTE(hl);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void ldd_a_hl(void) { CPU.cycles = 8; }    // LDD A,(HL) - LOAD A *FROM* HL AND *DECR* HL
@@ -208,7 +215,7 @@ static void ldd_a_hl(void) {
     hl--;
     CPU.reg.h = GET_HIGH_BYTE(hl);
     CPU.reg.l = GET_LOW_BYTE(hl);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // --------------------------------- 16-BIT LOADS ----------------------------------
@@ -236,7 +243,7 @@ static void ld_rr_nn(void) {
             CPU.reg.sp = nn;
             break;
     }
-    //CPU.cycles = 12;
+    CPU.cycles = 12;
 }
 
 // static void ld_nn_sp(void) { CPU.cycles = 20; }   // LD (nn),SP - STORE SP AT ADDR POINTED TO BY IMMEDIATE VAL
@@ -244,13 +251,13 @@ static void ld_nn_sp(void) {
     u16 addr = read_word();
     write_to_bus(addr, GET_LOW_BYTE(CPU.reg.sp));
     write_to_bus(addr + 1, GET_HIGH_BYTE(CPU.reg.sp));
-    //CPU.cycles = 20;
+    CPU.cycles = 20;
 }
 
 // static void ld_sp_hl(void) { CPU.cycles = 8; }    // LD SP,HL - LOAD HL INTO SP
 static void ld_sp_hl(void) {
     CPU.reg.sp = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void push_rr(void) { CPU.cycles = 16; }    // PUSH rr - PUSH REGISTER PAIR ONTO STACK
@@ -282,7 +289,7 @@ static void push_rr(void) {
     CPU.reg.sp--;
     write_to_bus(CPU.reg.sp, low);          // DECREMENT SP ADDR PER AND WRITE LOW/HIGH FROM REG PAIR TO SP
     
-    //CPU.cycles = 16;
+    CPU.cycles = 16;
 }
 
 // static void pop_rr(void) { CPU.cycles = 12; }     // POP rr
@@ -312,7 +319,7 @@ static void pop_rr(void) {
             break;
     }
     
-    //CPU.cycles = 12;
+    CPU.cycles = 12;
 }
 
 // ----------------------------------- 8-BIT ALU -----------------------------------
@@ -322,11 +329,11 @@ static void add_a_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        value = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-       // CPU.cycles = 8;
+        value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
     u16 result = CPU.reg.a + value;
     
@@ -349,7 +356,7 @@ static void add_a_n(void) {
     SET_FLAG_C(result > 0xFF);
     
     CPU.reg.a = result & 0xFF;
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void adc_a_r(void) { CPU.cycles = 4; }     // ADC A,r - ADD WITH CARRY
@@ -358,10 +365,10 @@ static void adc_a_r(void) {
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
     u8 carry = GET_FLAG_C;
     u16 result = CPU.reg.a + value + carry;
@@ -386,7 +393,7 @@ static void adc_a_n(void) {
     SET_FLAG_C(result > 0xFF);
     
     CPU.reg.a = result & 0xFF;
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void sub_a_r(void) { CPU.cycles = 4; }     // SUB A,r - SUBTRACT FROM A
@@ -395,10 +402,10 @@ static void sub_a_r(void) {
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
     u16 result = CPU.reg.a - value;
     
@@ -421,7 +428,7 @@ static void sub_a_n(void) {
     SET_FLAG_C(result > 0xFF);
     
     CPU.reg.a = result & 0xFF;
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void sbc_a_r(void) { CPU.cycles = 4; }     // SBC A,r - SUBTRACT WITH CARRY FROM A
@@ -430,10 +437,10 @@ static void sbc_a_r(void) {
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
     u8 carry = GET_FLAG_C;
     u16 result = CPU.reg.a - value - carry;
@@ -458,7 +465,7 @@ static void sbc_a_n(void) {
     SET_FLAG_C(result > 0xFF);
     
     CPU.reg.a = result & 0xFF;
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void and_r(void) { CPU.cycles = 4; }       // AND r - LOGICAL AND WITH REG
@@ -467,10 +474,10 @@ static void and_r(void) {
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
     
     CPU.reg.a &= value;
@@ -492,7 +499,7 @@ static void and_n(void) {
     SET_FLAG_H(1);
     SET_FLAG_C(0);
     
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void xor_r(void) { CPU.cycles = 4; }       // XOR r - LOGICAL XOR WITH REG
@@ -501,10 +508,10 @@ static void xor_r(void) {
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
 
     CPU.reg.a ^= value;
@@ -526,7 +533,7 @@ static void xor_n(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(0);
     
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void or_r(void) { CPU.cycles = 4; }        // OR r - LOGICAL OR WITH REG
@@ -535,10 +542,10 @@ static void or_r(void) {
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-       // CPU.cycles = 8;
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
     
     CPU.reg.a |= value;
@@ -560,7 +567,7 @@ static void or_n(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(0);
     
-   // CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void cp_r(void) { CPU.cycles = 4; }        // CP r - COMPARE WITH REG (SUBTRACT BUT DON'T STORE)
@@ -569,10 +576,10 @@ static void cp_r(void) {
     u8 value;
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
     } else {
         value =  *REGISTERS[reg_idx];
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
     u16 result = CPU.reg.a - value;
     
@@ -592,7 +599,7 @@ static void cp_n(void) {
     SET_FLAG_H((CPU.reg.a & 0x0F) < (value & 0x0F));
     SET_FLAG_C(result > 0xFF);
     
-   // CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void inc_r(void) { CPU.cycles = 4; }       // INC r - INCR REG BY 1 UNLESS HL (THEN VAL AT HL)
@@ -602,7 +609,7 @@ static void inc_r(void) {
     
     if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-        u8 value = read_from_bus(hl);
+        u8 value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
         u8 result = value + 1;
         
         SET_FLAG_Z(result == 0);
@@ -610,7 +617,7 @@ static void inc_r(void) {
         SET_FLAG_H((value & 0x0F) == 0x0F);
         
         write_to_bus(hl, result);
-        //CPU.cycles = 12;
+        CPU.cycles = 12;
     } else {
         u8 result = *reg + 1;
         
@@ -619,7 +626,7 @@ static void inc_r(void) {
         SET_FLAG_H((*reg & 0x0F) == 0x0F);
         
         *reg = result;
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
 }
 
@@ -638,7 +645,7 @@ static void dec_r(void) {
         SET_FLAG_H((value & 0x0F) == 0x00);
         
         write_to_bus(hl, result);
-        //CPU.cycles = 12;
+        CPU.cycles = 12;
     } else {
         u8 result = *reg - 1;
         
@@ -647,7 +654,7 @@ static void dec_r(void) {
         SET_FLAG_H((*reg & 0x0F) == 0x00);
         
         *reg = result;
-        //CPU.cycles = 4;
+        CPU.cycles = 4;
     }
 }
 
@@ -680,7 +687,7 @@ static void add_hl_rr(void) {
     CPU.reg.h = GET_HIGH_BYTE(result);
     CPU.reg.l = GET_LOW_BYTE(result);
     
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void inc_rr(void) { CPU.cycles = 8; }      // INC rr - INCR 16-BIT REG
@@ -706,7 +713,7 @@ static void inc_rr(void) {
         CPU.reg.sp++;
     }
     
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void dec_rr(void) { CPU.cycles = 8; }      // DEC rr - DECR 16-BIT REG
@@ -732,7 +739,7 @@ static void dec_rr(void) {
         CPU.reg.sp--;
     }
     
-    //CPU.cycles = 8;
+    CPU.cycles = 8;
 }
 
 // static void add_sp_d(void) { CPU.cycles = 16; }   // ADD SP,d - ADD SIGNED IMMEDIATE TO SP
@@ -754,7 +761,7 @@ static void add_sp_d(void) {
     }
     
     CPU.reg.sp = result;
-    //CPU.cycles = 16;
+    CPU.cycles = 16;
 }
 
 // static void ld_hl_sp_d(void) { CPU.cycles = 12; } // LD HL,SP+d - LOAD HL WITH SP + SIGNED IMMEDIATE
@@ -776,7 +783,7 @@ static void ld_hl_sp_d(void) {
     
     CPU.reg.h = GET_HIGH_BYTE(result);
     CPU.reg.l = GET_LOW_BYTE(result);
-    //CPU.cycles = 12;
+    CPU.cycles = 12;
 }
 
 // ------------------------------- ROTATES AND SHIFTS ------------------------------
@@ -794,7 +801,7 @@ static void rlca(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit7);
     
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void rla(void) { CPU.cycles = 4; }         // RLA - ROTATE A LEFT THROUGH CARRY
@@ -811,7 +818,7 @@ static void rla(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit7);
     
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void rrca(void) { CPU.cycles = 4; }        // RRCA - ROTATE A RIGHT WITH BIT 0 TO CARRY
@@ -827,7 +834,7 @@ static void rrca(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit0);
     
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void rra(void) { CPU.cycles = 4; }         // RRA - ROTATE A RIGHT THROUGH CARRY
@@ -844,7 +851,7 @@ static void rra(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit0);
     
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // ------------------------------ CB PREFIX OPERATIONS -----------------------------
@@ -864,7 +871,7 @@ static void rlc_r(void) {
     SET_FLAG_C(bit7);
     
     // WILL BEGIN SETTING HL CPU CYCLES LIKE THIS
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void rl_r(void) { CPU.cycles = 8; }        // RL r - ROTATE LEFT THROUGH CARRY
@@ -882,7 +889,7 @@ static void rl_r(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit7);
     
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void rrc_r(void) { CPU.cycles = 8; }       // RRC r - ROTATE RIGHT WITH COPY TO CARRY
@@ -899,7 +906,7 @@ static void rrc_r(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit0);
     
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void rr_r(void) { CPU.cycles = 8; }        // RR r - ROTATE RIGHT THROUGH CARRY
@@ -917,7 +924,7 @@ static void rr_r(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit0);
     
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void sla_r(void) { CPU.cycles = 8; }       // SLA r - SHIFT LEFT ARITHMETIC (BIT ZERO = 0)
@@ -934,7 +941,7 @@ static void sla_r(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit7);
     
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void sra_r(void) { CPU.cycles = 8; }       // SRA r - SHIFT RIGHT ARITHMETIC (BIT 7 UNCHANGED)
@@ -952,7 +959,7 @@ static void sra_r(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit0);
     
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void swap_r(void) { CPU.cycles = 8; }      // SWAP r - SWAP NIBBLES
@@ -968,7 +975,7 @@ static void swap_r(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(0);
     
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void srl_r(void) { CPU.cycles = 8; }       // SRL r - SHIFT RIGHT LOGICAL (BIT 7 = 0)
@@ -985,7 +992,7 @@ static void srl_r(void) {
     SET_FLAG_H(0);
     SET_FLAG_C(bit0);
     
-   // CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void bit_n_r(void) { CPU.cycles = 8; }     // BIT n,r - TEST BIT, SET Z FLAG IF BIT N IS 0, ELSE CLEARS
@@ -998,7 +1005,7 @@ static void bit_n_r(void) {
     SET_FLAG_N(0);
     SET_FLAG_H(1);
     
-   // CPU.cycles = (reg_idx == 0x06) ? 12 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 12 : 8;
 }
 
 // static void set_n_r(void) { CPU.cycles = 8; }     // SET n,r - SET BIT N IN REG TO 1, VAL IS LOG OR W/ 1 AT POS N
@@ -1010,7 +1017,7 @@ static void set_n_r(void) {
     value |= (1 << bit_num);
     set_reg_or_hl(reg_idx, value);
     
-    //CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // static void res_n_r(void) { CPU.cycles = 8; }     // RES n,r - RESET BIT AT REG TO 0, VAL IS LOG AND w/ 0 AT POS N
@@ -1022,7 +1029,7 @@ static void res_n_r(void) {
     value &= ~(1 << bit_num); // SQUIGGLY INVERTS BITS
     set_reg_or_hl(reg_idx, value);
     
-   // CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
+    CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
 // ----------------------------------- CPU CONTROL ---------------------------------
@@ -1032,7 +1039,7 @@ static void ccf(void) {
     SET_FLAG_N(0);
     SET_FLAG_H(0);
     SET_FLAG_C(!GET_FLAG_C);
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void scf(void) { CPU.cycles = 4; }         // SCF - SET C FLAG
@@ -1040,31 +1047,32 @@ static void scf(void) {
     SET_FLAG_N(0);
     SET_FLAG_H(0);
     SET_FLAG_C(1);
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void halt(void) { CPU.cycles = 4; }        // HALT - OBVIOUSLY HALTS THE CPU
 static void halt(void) {
     CPU.halted = 1;
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void stop(void) { CPU.cycles = 4; }        // STOP - "STOPS" POSSIBLY UNTIL BTN PRESS, LIKE SLEEP MODE
 static void stop(void) {
     CPU.stopped = 1;
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void di(void) { CPU.cycles = 4; }          // DI - DISABLE INTERRUPTS
 static void di(void) {
     CPU.ime = 0;  // INTERRUPT MASTER ENABLE FLAG
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void ei(void) { CPU.cycles = 4; }          // EI - ENABLE INTERRUPTS
 static void ei(void) {
-    CPU.ime = 1;  // INTERRUPT MASTER ENABLE FLAG
-    //CPU.cycles = 4;
+    LOG_WARN(LOG_CPU, "SCHEDULING IME - INSIDE EI OPCODE\n");
+    CPU.ime_scheduled = 1;
+    CPU.cycles = 4;
 }
 
 // -------------------------------------- JUMPS ------------------------------------
@@ -1073,7 +1081,7 @@ static void ei(void) {
 static void jp_nn(void) {
     u16 addr = read_word();
     CPU.reg.pc = addr;
-    //CPU.cycles = 16;
+    CPU.cycles = 16;
 }
 
 // static void jp_cc_nn(void) { CPU.cycles = 12; }   // JP cc,nn - CONDITIONAL JUMP TO ABSOLUTE ADDRESS NN
@@ -1091,23 +1099,23 @@ static void jp_cc_nn(void) {
 
     if (jump) {
         CPU.reg.pc = addr;
-        //CPU.cycles = 16;
+        CPU.cycles = 16;
     } else {
-        //CPU.cycles = 12;
+        CPU.cycles = 12;
     }
 }
 
 // static void jp_hl(void) { CPU.cycles = 4; }       // JP (HL) - JUMP TO HL
 static void jp_hl(void) {
     CPU.reg.pc = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-    //CPU.cycles = 4;
+    CPU.cycles = 4;
 }
 
 // static void jr_n(void) { CPU.cycles = 12; }       // JR n - RELATIVE JUMP BY SIGNED IMMEDIATE N
 static void jr_n(void) {
     i8 offset = (i8)read_byte();
     CPU.reg.pc += offset;
-    //CPU.cycles = 12;
+    CPU.cycles = 12;
 }
 
 // static void jr_cc_n(void) { CPU.cycles = 8; }     // JR cc,n - CONDITIONAL RELATIVE JUMP BY SIGNED IMMEDIATE N
@@ -1125,9 +1133,9 @@ static void jr_cc_n(void) {
 
     if (jump) {
         CPU.reg.pc += offset;
-        //CPU.cycles = 12;
+        CPU.cycles = 12;
     } else {
-        //CPU.cycles = 8;
+        CPU.cycles = 8;
     }
 }
 
@@ -1145,7 +1153,7 @@ static void call_nn(void) {
     
     // JUMP TO ADDRESS
     CPU.reg.pc = addr;
-    //CPU.cycles = 24;
+    CPU.cycles = 24;
 }
 
 // static void call_cc_nn(void) { CPU.cycles = 12; } // CALL cc,nn - CONDITIONAL CALL TO ABSOLUTE ADDRESS NN
@@ -1169,9 +1177,9 @@ static void call_cc_nn(void) {
         
         // JUMP TO ADDRESS
         CPU.reg.pc = addr;
-        //CPU.cycles = 24;
+        CPU.cycles = 24;
     } else {
-       // CPU.cycles = 12;
+        CPU.cycles = 12;
     }
 }
 
@@ -1179,8 +1187,24 @@ static void call_cc_nn(void) {
 
 // static void rst_n(void) { CPU.cycles = 16; }      // RST n - RESTART, CALL TO FIXED ADDRESS
 static void rst_n(void) {
-    // GET RESTART ADDRESS FROM OPCODE (BITS 3-5)
-    u8 addr = (CPU.opcode & 0x38);  // 0x38 IS 00111000, ISOLATES BITS 3-5
+    // RST'S ARE AT FIXED ADDR
+    static const u16 RST_VECTORS[] = {
+        0x00,  // RST 00h (0xC7)
+        0x08,  // RST 08h (0xCF) 
+        0x10,  // RST 10h (0xD7)
+        0x18,  // RST 18h (0xDF)
+        0x20,  // RST 20h (0xE7)
+        0x28,  // RST 28h (0xEF)
+        0x30,  // RST 30h (0xF7)
+        0x38   // RST 38h (0xFF)
+    };
+
+    // INDEX FROM OPCODE
+    u8 vector_idx = ((CPU.opcode & 0x38) >> 3);
+    u16 target_addr = RST_VECTORS[vector_idx];
+
+    LOG_TRACE(LOG_CPU, "RST DEBUG: opcode=0x%02X, mask=0x%02X, idx=%d, addr=0x%04X\n",
+           CPU.opcode, (CPU.opcode & 0x38), vector_idx, target_addr);
     
     // PUSH CURRENT PC ONTO STACK
     CPU.reg.sp--;
@@ -1188,9 +1212,10 @@ static void rst_n(void) {
     CPU.reg.sp--;
     write_to_bus(CPU.reg.sp, GET_LOW_BYTE(CPU.reg.pc));
     
-    // JUMP TO RESTART ADDRESS
-    CPU.reg.pc = addr;
-    //CPU.cycles = 16;
+    CPU.reg.pc = target_addr;
+    CPU.cycles = 16;
+
+    LOG_TRACE(LOG_CPU, "RST: PC was 0x%04X, now 0x%04X\n", CPU.reg.pc - 1, CPU.reg.pc);
 }
 
 // ------------------------------------ RETURNS ------------------------------------
@@ -1205,7 +1230,7 @@ static void ret(void) {
    
    // JUMP TO POPPED ADDRESS
    CPU.reg.pc = MAKE_WORD(high, low);
-   //CPU.cycles = 16;
+   CPU.cycles = 16;
 }
 
 // static void ret_cc(void) { CPU.cycles = 8; }      // RET cc - CONDITIONAL RETURN FROM SUBROUTINE
@@ -1229,9 +1254,9 @@ static void ret_cc(void) {
        
        // JUMP TO POPPED ADDRESS
        CPU.reg.pc = MAKE_WORD(high, low);
-       //CPU.cycles = 20;
+       CPU.cycles = 20;
    } else {
-       //CPU.cycles = 8;
+       CPU.cycles = 8;
    }
 }
 
@@ -1246,7 +1271,7 @@ static void reti(void) {
    // JUMP TO POPPED ADDRESS AND ENABLE INTERRUPTS
    CPU.reg.pc = MAKE_WORD(high, low);
    CPU.ime = 1; // GOING TO RE-ENABLE FOR NOW, MIGHT NEED TO DISABLE
-   //CPU.cycles = 16;
+   CPU.cycles = 16;
 }
 
 // TABLE INITIALIZATION ------------------------------------------------------------
@@ -1260,7 +1285,7 @@ static void init_tables(void) {
 
     // 8-BIT LOAD INSTRUCTIONS
     for (int i = 0x40; i <= 0x7F; i++) {
-        opcode_table[i] = ld_r_r;  // All register-register loads, including (HL) cases
+        opcode_table[i] = ld_r_r;  // ALL REG-REG LOADS
     }
 
     opcode_table[0x06] = ld_r_n;      // LD B,n
@@ -1416,55 +1441,104 @@ static void init_tables(void) {
 // CPU CYCLES
 void cpu_init(void) {
     init_tables();
-    CPU.reg.pc = 0x100;
+
+    CPU.reg.pc = 0x0000;
     CPU.reg.sp = 0xFFFE;
+    
+    // Default register values
+    CPU.reg.a = 0x01;
+    CPU.reg.f = 0xB0;
+    CPU.reg.b = 0x00;
+    CPU.reg.c = 0x13;
+    CPU.reg.d = 0x00;
+    CPU.reg.e = 0xD8;
+    CPU.reg.h = 0x01;
+    CPU.reg.l = 0x4D;
+
+    CPU.ime = 1;
+    CPU.ime_scheduled = 0;
     CPU.halted = false;
-    CPU.stepping = false;
-    //CPU.cycles = 0;
+    CPU.stopped = false;
+
+    CPU.opcode = 0;
+    CPU.cycles = 0;
 }
 
 void cpu_step(void) {
     if (CPU.halted) return;
 
+    // SET FLAG FOR IME SCHEDULER
+    bool was_scheduled = CPU.ime_scheduled;
+
+    // GET + STORE INITIAL PC FOR DEBUG
+    u16 initial_pc = CPU.reg.pc;
+    
+    LOG_TRACE(LOG_CPU, "--- NEW CPU CYCLE ---");
+    LOG_TRACE(LOG_CPU, "ATTEMPTING TO READ FROM PC: 0x%04X\n", CPU.reg.pc);
+
+    // GET CURRENT OPCODE
     CPU.opcode = read_from_bus(CPU.reg.pc++);
 
-    #ifdef DEBUG
-    printf("\n--- CPU CYCLE ---\n");
-    printf("OPCODE: 0x%02X\n", CPU.opcode);
-    printf("BEFORE OP:\n");
-    printf("PC: 0x%04X  SP: 0x%04X  Cycles: %u\n", 
-           CPU.reg.pc, CPU.reg.sp, CPU.cycles);
-    printf("A: 0x%02X  F: 0x%02X\n", CPU.reg.a, CPU.reg.f);
-    printf("B: 0x%02X  C: 0x%02X\n", CPU.reg.b, CPU.reg.c);
-    printf("D: 0x%02X  E: 0x%02X\n", CPU.reg.d, CPU.reg.e);
-    printf("H: 0x%02X  L: 0x%02X\n", CPU.reg.h, CPU.reg.l);
-    #endif
+    LOG_DEBUG(LOG_CPU, "READ COMPLETE - OPCODE: 0x%02X, NEW PC: 0x%04X\n", CPU.opcode, CPU.reg.pc);
+    LOG_TRACE(LOG_CPU, "IME=%d IME_SCHEDULED=%d SP=0x%04X CYCLES=%u",
+        CPU.ime, CPU.ime_scheduled, CPU.reg.sp, CPU.cycles);
+    LOG_TRACE(LOG_CPU, "REGS: A=0x%02X F=0x%02X B=0x%02X C=0x%02X D=0x%02X E=0x%02X H=0x%02X L=0x%02X",
+        CPU.reg.a, CPU.reg.f, CPU.reg.b, CPU.reg.c, CPU.reg.d, CPU.reg.e, CPU.reg.h, CPU.reg.l);
+    LOG_TRACE(LOG_CPU, "EXECUTING OPCODE 0x%02X at PC 0x%04X\n", CPU.opcode, initial_pc);
 
+    // EXECUTE NEXT INSTRUCTION
     if (CPU.opcode == 0xCB) {
         CPU.opcode = read_from_bus(CPU.reg.pc++);
         cb_opcode_table[CPU.opcode]();
     } else {
         opcode_table[CPU.opcode]();
     }
+    LOG_TRACE(LOG_CPU, "EXECUTION COMPLETE - PC NOW AT: 0x%04X\n", CPU.reg.pc);
 
-    #ifdef DEBUG
-    printf("\nAFTER OP:\n");
-    printf("PC: 0x%04X  SP: 0x%04X  Cycles: %u\n", 
+    if (was_scheduled) {
+        LOG_WARN(LOG_CPU, "ENABLING IME (WAS SCHEDULED FROM PREVIOUS INSTRUCTION)\n");
+        CPU.ime = 1;
+        CPU.ime_scheduled = 0;
+    }
+
+    LOG_TRACE(LOG_CPU, "\nAFTER OP:\n");  
+    LOG_TRACE(LOG_CPU, "IME FLAG: %i, IME-SCHEDULED: %i\n", CPU.ime, CPU.ime_scheduled);
+    LOG_TRACE(LOG_CPU, "PC: 0x%04X  SP: 0x%04X  Cycles: %u\n", 
            CPU.reg.pc, CPU.reg.sp, CPU.cycles);
-    printf("A: 0x%02X  F: 0x%02X\n", CPU.reg.a, CPU.reg.f);
-    printf("B: 0x%02X  C: 0x%02X\n", CPU.reg.b, CPU.reg.c);
-    printf("D: 0x%02X  E: 0x%02X\n", CPU.reg.d, CPU.reg.e);
-    printf("H: 0x%02X  L: 0x%02X\n", CPU.reg.h, CPU.reg.l);
-    #endif
+    LOG_TRACE(LOG_CPU, "A: 0x%02X  F: 0x%02X\n", CPU.reg.a, CPU.reg.f);
+    LOG_TRACE(LOG_CPU, "B: 0x%02X  C: 0x%02X\n", CPU.reg.b, CPU.reg.c);
+    LOG_TRACE(LOG_CPU, "D: 0x%02X  E: 0x%02X\n", CPU.reg.d, CPU.reg.e);
+    LOG_TRACE(LOG_CPU, "H: 0x%02X  L: 0x%02X\n", CPU.reg.h, CPU.reg.l);
+    LOG_TRACE(LOG_CPU, "--- END CPU CYCLE ---");
 }
 
-registers* get_registers(){
+// CYCLE MANAGEMENT
+u8 get_cpu_cycles(void) {
+    return CPU.cycles;
+}
+
+void reset_cpu_cycles(void) {
+    CPU.cycles = 0;
+}
+
+// REGISTER ACCESS
+registers* get_registers(void) {
     return &CPU.reg;
 }
 
-u8 get_int_flags(){
-    return CPU.intrupt_flags;
+// INTERRUPT STATE HANDLING
+bool get_ime(void) {
+    return CPU.ime;
 }
-void set_int_flags(u8 val){
-    CPU.intrupt_flags = val;
+
+void set_ime(bool val) {
+    CPU.ime = val;
+}
+
+bool is_cpu_halted(void) {
+    return CPU.halted;
+}
+
+void set_cpu_halted(bool val) {
+    CPU.halted = val;
 }

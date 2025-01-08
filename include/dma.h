@@ -2,8 +2,7 @@
 #define DMA_H
 
 #include "config.h"
-#include "ppu.h"
-#include "bus.h"
+#include "graphics.h"
 
 struct dma {
     bool isActive;
@@ -14,6 +13,6 @@ struct dma {
 
 void dma_start(u8 val);
 void dma_tick();
-bool dma_tx();
+bool get_dma_active();
 
 #endif
