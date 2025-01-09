@@ -44,10 +44,8 @@ void timer_tick(void) {
     
     // FALLING EDGE DETECTION (1->0 TRANSITION)
     if (timer.prev_bit && !current_bit) {
-        timer.tima++;
-        
         // CHECK FOR OVERFLOW
-        if (timer.tima == 0) {
+        if (++timer.tima == 0) {
             timer.tima = timer.tma;     // LOAD MODULO VALUE
             interrupt_req(INT_TIMER);   // REQUEST INTERRUPT
             LOG_WARN(LOG_TIMER, "TIMER OVERFLOW - LOADED TMA=0x%02X\n", timer.tma);

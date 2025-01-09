@@ -22,7 +22,7 @@ void dma_tick() {
     }
 
     // TRANSFER ONE BYTE FROM SOURCE TO OAM
-    u16 source = (DMA.val * 0x100) + DMA.byte;
+    u16 source = (DMA.val << 8) + DMA.byte;
     write_to_bus(OAM_START + DMA.byte, read_from_bus(source));
     
     DMA.byte++;

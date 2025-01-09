@@ -80,16 +80,13 @@ static void ld_r_r(void) {
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
         *REGISTERS[dst_reg] = read_from_bus(hl);
         CPU.cycles = 8;
-        //gb_cycles(2);
     } else if (dst_reg == 0x06) {
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
         write_to_bus(hl, *REGISTERS[src_reg]);
         CPU.cycles = 8;
-        //gb_cycles(2);
     } else {
         *REGISTERS[dst_reg] = *REGISTERS[src_reg];
         CPU.cycles = 4;
-        //gb_cycles(1);
     }
 }
 // static void ld_r_n(void) { CPU.cycles = 8; }      // LD r,n - LOAD REG R WITH IMMEDIATE VALUE N

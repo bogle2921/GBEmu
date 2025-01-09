@@ -137,25 +137,91 @@ static bool is_mbc5() {
 }
 
 static u32 get_rom_offset(u16 addr) {
-    if (addr < ROM_BANK) return addr;  // BANK 0 FIXED
+    // BANK 0 IS ALWAYS FIXED
+    if (addr < ROM_BANK) return addr;
 
-    if (is_mbc1()) {
-        return (c.current_rom_bank * ROM_BANK) + (addr - ROM_BANK);
-    }
+    u32 max_banks = c.rom_size / ROM_BANK;
+    u32 bank = 0;
     
-    if (is_mbc3()) {
-        return (c.current_rom_bank * ROM_BANK) + (addr - ROM_BANK);
+    // GET BANK NUMBER BASED ON MBC TYPE
+    switch(c.mbc_type) {
+        case MBC1:
+        case MBC1_RAM:
+        case MBC1_RAM_BATTERY:  // MBC1: 125 ROM BANKS
+            bank = c.current_rom_bank & (max_banks - 1);
+            if (bank == 0) bank = 1;
+            break;
+
+        case MBC2:
+        case MBC2_BATTERY:  // MBC2: 16 ROM BANKS
+            bank = c.current_rom_bank & 0x0F; // 16 BANKS MAX
+            break;
+
+        case MBC3:
+        case MBC3_RAM:
+        case MBC3_RAM_BATTERY:
+        case MBC3_TIMER_BATTERY:
+        case MBC3_TIMER_RAM_BATTERY:    // MBC3: 128 ROM BANKS
+        case MBC5:
+        case MBC5_RAM:
+        case MBC5_RAM_BATTERY:  // MBC5: 512 ROM BANKS (PLUS RUMBLE)
+            bank = c.current_rom_bank & (max_banks - 1);
+            break;
+
+        default: // NO MBC + FALLBACK
+            return addr;
     }
 
-    // FALLBACK TO NO BANKING
-    return addr;
+    u32 offset = (bank * ROM_BANK) + (addr - ROM_BANK);
+    if (offset >= c.rom_size) {
+        LOG_ERROR(LOG_CART, "ROM BANK ACCESS OUT OF BOUNDS: BANK=%u ADDR=%04X OFF=%08X SIZE=%08X", 
+                 bank, addr, offset, c.rom_size);
+        return addr;
+    }
+
+    LOG_TRACE(LOG_CART, "ROM ACCESS: BANK=%u ADDR=%04X OFF=%08X", bank, addr, offset);
+    return offset;
 }
 
 static u32 get_ram_offset(u16 addr) {
-    if (is_mbc1() || is_mbc3()) {
-        return (c.current_ram_bank * RAM_BANK_SIZE) + (addr - RAM_START);
+    // VALIDATE RAM RANGE
+    if (addr < RAM_START || addr >= WRAM_START) {
+        LOG_ERROR(LOG_BUS, "RAM ACCESS OUT OF RANGE: 0x%04X", addr);
+        return 0;
     }
-    return addr - RAM_START;
+
+    u16 ram_addr = addr - RAM_START;
+
+    switch(c.mbc_type) {
+        case MBC1:
+        case MBC1_RAM:
+        case MBC1_RAM_BATTERY:  // MBC1: 4 RAM BANKS
+            return (c.current_ram_bank & 0x03) * RAM_BANK_SIZE + ram_addr;
+
+        case MBC2:
+        case MBC2_BATTERY:  // MBC2: 512x4 BIT RAM
+            return ram_addr & 0x1FF;  // 9-BIT ADDRESSING
+
+        case MBC3:
+        case MBC3_RAM:
+        case MBC3_RAM_BATTERY:
+        case MBC3_TIMER_BATTERY:
+        case MBC3_TIMER_RAM_BATTERY:  // MBC3: 4 RAM BANKS + RTC
+            if (c.current_ram_bank <= 0x03) {
+                return c.current_ram_bank * RAM_BANK_SIZE + ram_addr;
+            } else if (c.current_ram_bank >= 0x08 && c.current_ram_bank <= 0x0C) {
+                return ram_addr;  // RTC REGISTERS MAP DIRECTLY
+            }
+            return 0;
+
+        case MBC5:
+        case MBC5_RAM: 
+        case MBC5_RAM_BATTERY:  // MBC5: 16 RAM BANKS
+            return (c.current_ram_bank & 0x0F) * RAM_BANK_SIZE + ram_addr;
+
+        default:  // NO MBC OR UNKNOWN
+            return ram_addr;
+    }
 }
 
 bool load_cartridge(const char* cart) {
@@ -226,6 +292,15 @@ bool load_cartridge(const char* cart) {
         default:
             LOG_ERROR(LOG_MAIN, "INVALID ROM SIZE CODE: 0x%02X", c.header->size_rom);
             return false;
+    }
+
+    // ROM BANK VALIDATION
+    u32 expected_size = rom_banks * ROM_BANK;
+    if (c.rom_size != expected_size) {
+        LOG_ERROR(LOG_MAIN, "ROM SIZE MISMATCH: GOT=%u EXPECTED=%u BANKS=%u",
+                 c.rom_size, expected_size, rom_banks);
+        free(c.rom_data);
+        return false;
     }
 
     // RAM SIZE AND BATTERY
@@ -340,7 +415,7 @@ u8 read_cart(u16 addr) {
 
 u8 read_cart_ram(u16 addr) {
     // CHECK RAM ACCESS
-    if (!c.ram_enabled || !c.ram_data) {
+    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled || !c.ram_data) {
         return 0xFF;
     }
 
@@ -403,7 +478,7 @@ void write_to_cart(u16 addr, u8 val) {
 
 void write_cart_ram(u16 addr, u8 val) {
     // CHECK RAM ACCESS PERMISSION
-    if (!c.ram_enabled || !c.ram_data) {
+    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled || !c.ram_data) {
         return;
     }
 

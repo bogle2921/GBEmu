@@ -24,7 +24,6 @@ typedef struct {
 // CORE SYSTEM CONTROL
 void gameboy_init();
 void run_gb();
-void gb_cycles(int cycles);
 gameboy* get_gb();
 
 #endif
