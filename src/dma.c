@@ -1,32 +1,34 @@
+#include "logger.h"
 #include "dma.h"
+#include "bus.h"
 
-struct dma DMA = {0};
+static struct dma DMA = {0};
 
-void dma_start(u8 val){
+void dma_start(u8 val) {
     DMA.isActive = true;
     DMA.byte = 0;
-    DMA.delay = 2;
+    DMA.delay = 2;  // 2 CYCLE SETUP DELAY
     DMA.val = val;
 }
 
-void dma_tick(){
-    if(!DMA.isActive){
+void dma_tick() {
+    if (!DMA.isActive) {
         return;
     }
 
-    if(DMA.delay){
+    if (DMA.delay) {
         DMA.delay--;
         return;
     }
 
-    oam_write(DMA.byte, read_from_bus((DMA.val * 0x100) + DMA.byte));
+    // TRANSFER ONE BYTE FROM SOURCE TO OAM
+    u16 source = (DMA.val * 0x100) + DMA.byte;
+    write_to_bus(OAM_START + DMA.byte, read_from_bus(source));
+    
     DMA.byte++;
-    DMA.isActive = DMA.byte < 0xA0;
-
-    if(!DMA.isActive){
-        printf("DMA Complete\n");
-    }
+    DMA.isActive = DMA.byte < 0xA0;  // 160 BYTES TOTAL
 }
-bool dma_tx(){
-    return DMA.isActive;
+
+bool get_dma_active() {
+    return DMA.isActive;  // TRUE IF TRANSFER IN PROGRESS
 }

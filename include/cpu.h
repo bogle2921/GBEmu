@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include "config.h"
 #include "bus.h"
-// #include "gameboy.h"
 
 // REGISTERS
 typedef struct {
@@ -20,11 +19,10 @@ typedef struct {
     bool halted;
     bool stopped;
     bool stepping;
-    bool ime;           // INTERUPT MASTER ENABLE - ENABLES THE ABILITY TO INTERUPT CPU?
-    u8 intrupt_flags;
-    u8 ie_reg;
+    bool ime;
+    bool ime_scheduled;
     u8 opcode;
-    //u32 cycles;
+    u32 cycles;
 } cpu;
 
 // FLAGS
@@ -46,13 +44,17 @@ typedef struct {
 #define GET_LOW_BYTE(n) (n & 0xFF)
 #define MAKE_WORD(h, l) ((h << 8) | l)
 
-
 // SETUP AND CYCLE CPU
 void cpu_init(void);
 void cpu_step(void);
+u8 get_cpu_cycles(void);
+void reset_cpu_cycles(void);
 
+// CPU STATE ACCESS
 registers* get_registers();
-u8 get_int_flags();
-void set_int_flags(u8 val);
+bool get_ime(void);
+void set_ime(bool val);
+bool is_cpu_halted(void);
+void set_cpu_halted(bool val);
 
 #endif

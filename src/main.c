@@ -1,42 +1,48 @@
+#include "logger.h"
 #include "SDL2/SDL.h"
 #include "gameboy.h"
 #include "cart.h"
+#include "bus.h"
 #include "config.h"
 
-int main(int argc, char** argv){
-    if (argc < 2){
-        printf("Usage: gb-emu <rom>\n");
-        return -1;
+int main(int argc, char** argv) {
+    
+    // INIT LOGGER - CAREFUL SETTING INIT LEVEL TO TRACE...
+    // LOG_TRACE WILL BASICALLY WRITE AS FAST AS YOU CAN WRITE TO DISK
+    #ifdef DEBUG
+    logger_init(LOG_INFO);
+    #else
+    logger_init(LOG_INFO);
+    #endif
+
+    if (argc < 3) {
+        LOG_WARN(LOG_MAIN, "Usage: %s <bootrom.bin> <game.gb>\n", argv[0]);
+        return 1;
     }
 
-    const char* filename = argv[1];
-    printf("Loading %s\n", filename);
-
-    // VALIDATE + LOAD CART FROM ROMFILE
-    if (!load_cartridge(filename)){
-        printf("Failed to load: %s\n", filename);
-        return -1;
-    }
-
+    // INIT BUS FIRST
+    init_bus();
+    
+    // INIT REST OF SYSTEMS
     gameboy_init();
+
+    // LOAD BOOT ROM
+    if (!load_bootrom(argv[1])) {
+        LOG_ERROR(LOG_MAIN, "Failed to load bootrom: %s\n", argv[1]);
+        return 1;
+    }
+
+    // LOAD CARTRIDGE
+    if (!load_cartridge(argv[2])) {
+        LOG_ERROR(LOG_MAIN, "Failed to load cartridge: %s\n", argv[2]);
+        return 1;
+    }
+
+    // RUN EMULATION
     run_gb();
 
-    /*while(gb.running){
-        ui_event_handler();
-        ui_update();
-
-        // EXECUTE CPU INSTRUCTIONS FOR THIS FRAME
-        // TODO: WE NEED PROPER TIMING!
-        // -> https://gbdev.io/pandocs/Rendering.html?highlight=mhz
-        if (!gb.paused) {
-            // FROM DOCS: A “dot” = one 222 Hz (≅ 4.194 MHz) time unit
-            // SO WE NEED TO RUN MULTIPLE CPU STEPS PER FRAME
-            for (int i = 0; i < 69905; i++) {  // GUESTIMATE STEPS PER FRAME
-                cpu_step();
-            }
-        }
-    }*/
+    // CLEANUP
+    logger_cleanup();
+    
     return 0;
 }
-
-

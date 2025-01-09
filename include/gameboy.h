@@ -5,25 +5,26 @@
 #include "cpu.h"
 #include "graphics.h"
 #include "timer.h"
-#include "ppu.h"
+#include "interrupt.h"
+#include "dma.h"
 
-// typedef uint8_t u8;
-// typedef uint16_t u16;
-// typedef uint32_t u32;
-// typedef uint64_t u64;
-//typedef int8_t i8;
+// SYSTEM CONSTANTS
+#define CPU_SPEED 4194304
+#define CYCLES_PER_FRAME 70224
+#define NS_PER_FRAME 16743706  // 1/59.7275 SEC IN NS
+extern bool use_bootrom;
 
 typedef struct {
     bool paused;
     u64 ticks;
     bool die;
+    u32 cycles_this_frame;
 } gameboy;
 
+// CORE SYSTEM CONTROL
 void gameboy_init();
-gameboy* get_gb();
 void run_gb();
-void gameboy_init();
 void gb_cycles(int cycles);
-
+gameboy* get_gb();
 
 #endif

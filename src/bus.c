@@ -1,35 +1,92 @@
+#include "logger.h"
 #include "bus.h"
 
-// VIRTUALIZED MEMORY (OUR RAM)
-static u8 vram[0x2000];         // 8KB VRAM
-static u8 wram[0x2000];         // 8KB WRAM
-static u8 oam[0xA0];            // 160B OAM
-static u8 hram[0x7F];           // 127B HRAM
-static u8 ie_register;          // INTERRUPT ENABLE REGISTER, SEE CONFIG
-static u8 io_registers[0x80];   // STORE IO REGISTER VALUES
+// MEMORY MAP
+/*
+THIS FILE IS A BIT MUCH. TODO: IDK
+CHECK BUS.H HEADER FILE, LET KEEP ALL INDEX/LOCATIONS THERE.
+*/
+static struct {
+    u8 wram[0x2000];    // WORKING RAM (8KB)
+    u8 hram[0x80];      // HIGH RAM (127B)
+    u8 io[0x80];        // IO REGISTERS (127B) 
+    u8 bootrom[0x100];  // BOOT ROM (256B)
+    
+    // IO PORTS
+    struct {
+        u8 joypad;
+        u8 serial_data;
+        u8 serial_control;
+        u8 nr10, nr11, nr12, nr13, nr14;  // CHANNEL 1  
+        u8 nr21, nr22, nr23, nr24;        // CHANNEL 2
+        u8 nr30, nr31, nr32, nr33, nr34;  // CHANNEL 3 
+        u8 nr41, nr42, nr43, nr44;        // CHANNEL 4
+        u8 nr50, nr51, nr52;              // CONTROL
+    } ports;
+} bus = {0};
 
-u8 read_io(u16 addr) {
+extern bool use_bootrom;
+
+void init_bus() {
+    memset(&bus.wram, 0, sizeof(bus.wram));
+    memset(&bus.hram, 0, sizeof(bus.hram));
+    memset(&bus.io, 0, sizeof(bus.io));
+    memset(&bus.ports, 0, sizeof(bus.ports));
+
+    // SET RST $38 HANDLER
+    bus.wram[0x0038] = 0x00;  // NOP 
+    bus.wram[0x0039] = 0xD9;  // RETI
+}
+
+static u8 read_io(u16 addr) {
+    // HANDLE ALL IO PORT READS
     switch(addr) {
-        case P1_REG:
-            // TODO: JOYPAD / CONTROLLER INP *READ*
-            return io_registers[addr - IO_REG];
+        // JOYPAD
+        case P1_REG:   return bus.ports.joypad;
+        case SB_REG:   return bus.ports.serial_data;
+        case SC_REG:   return bus.ports.serial_control;
 
+        // TIMER
         case DIV_REG:
         case TIMA_REG:
         case TMA_REG:
-        case TAC_REG:
-            // TODO: TIMER WHICH IS GOING TO BE DIFFICULT I THINK *READ*
-            return io_registers[addr - IO_REG];
+        case TAC_REG:  return timer_read(addr);
 
-        case IF_REG:
-            // INTERRUPT FLAGS
-            return io_registers[addr - IO_REG];
+        // INTERRUPTS  
+        case IF_REG:   return get_interrupt_flags();
 
-        case SB_REG:
-        case SC_REG:
-            // LINK CABLE (SERIAL TRANSFER DATA, NOT REALLY NEEDED)
-            return io_registers[addr - IO_REG];
+        // SOUND CH1
+        case NR10_REG: return bus.ports.nr10;
+        case NR11_REG: return bus.ports.nr11; 
+        case NR12_REG: return bus.ports.nr12;
+        case NR13_REG: return bus.ports.nr13;
+        case NR14_REG: return bus.ports.nr14;
 
+        // SOUND CH2
+        case NR21_REG: return bus.ports.nr21;
+        case NR22_REG: return bus.ports.nr22;
+        case NR23_REG: return bus.ports.nr23;
+        case NR24_REG: return bus.ports.nr24;
+
+        // SOUND CH3
+        case NR30_REG: return bus.ports.nr30;
+        case NR31_REG: return bus.ports.nr31;
+        case NR32_REG: return bus.ports.nr32;
+        case NR33_REG: return bus.ports.nr33;
+        case NR34_REG: return bus.ports.nr34;
+
+        // SOUND CH4
+        case NR41_REG: return bus.ports.nr41;
+        case NR42_REG: return bus.ports.nr42;
+        case NR43_REG: return bus.ports.nr43;
+        case NR44_REG: return bus.ports.nr44;
+
+        // SOUND CTRL
+        case NR50_REG: return bus.ports.nr50;
+        case NR51_REG: return bus.ports.nr51;
+        case NR52_REG: return bus.ports.nr52;
+
+        // LCD/PPU
         case LCDC_REG:
         case STAT_REG:
         case SCY_REG:
@@ -41,228 +98,149 @@ u8 read_io(u16 addr) {
         case OBP0_REG:
         case OBP1_REG:
         case WY_REG:
-        case WX_REG:
-            // TODO (YES YOU BANDIT): IMPLEMENT PPU
-            return io_registers[addr - IO_REG];
-
-        case NR10_REG:
-        case NR11_REG:
-        case NR12_REG:
-        case NR13_REG:
-        case NR14_REG:
-        case NR21_REG:
-        case NR22_REG:
-        case NR23_REG:
-        case NR24_REG:
-        case NR30_REG:
-        case NR31_REG:
-        case NR32_REG:
-        case NR33_REG:
-        case NR34_REG:
-        case NR41_REG:
-        case NR42_REG:
-        case NR43_REG:
-        case NR44_REG:
-        case NR50_REG:
-        case NR51_REG:
-        case NR52_REG:
-            // TODO: IMPLEMENT SOUND
-            return io_registers[addr - IO_REG];
+        case WX_REG:   return lcd_read(addr);
 
         default:
-            printf("BAD IO READ: 0x%04X\n", addr);
+            LOG_WARN(LOG_BUS, "BAD IO READ: 0x%04X\n", addr);
             return 0xFF;
     }
 }
 
-void write_io(u16 addr, u8 val) {
+static void write_io(u16 addr, u8 val) {
+    // HANDLE ALL IO PORT WRITES
     switch(addr) {
-        case P1_REG:
-            // TODO: JOYPAD / CONTROLLER INP *WRITE*
-            io_registers[addr - IO_REG] = val;
+        // BOOTROM CONTROL
+        case BROM_UMAP:
+            if (val) {
+                use_bootrom = false;
+                LOG_WARN(LOG_BUS, "BOOTROM DISABLED\n");
+            }
             break;
 
+        // JOYPAD
+        case P1_REG:   bus.ports.joypad = val; break;
+        case SB_REG:   bus.ports.serial_data = val; break;
+        case SC_REG:   bus.ports.serial_control = val; break;
+
+        // TIMER
         case DIV_REG:
-            // DIV IS RESET ON ANY WRITE
-            io_registers[addr - IO_REG] = 0;
-            break;
-
         case TIMA_REG:
         case TMA_REG:
-        case TAC_REG:
-            // TODO: IMPLEMENT TIMER
-            io_registers[addr - IO_REG] = val;
-            break;
+        case TAC_REG:  timer_write(addr, val); break;
 
-        case IF_REG:
-            // INTERRUPT FLAGS
-            io_registers[addr - IO_REG] = val;
-            break;
-        case SB_REG:
-        case SC_REG:
-            // LINK CABLE (SERIAL TRANSFER DATA, NOT REALLY NEEDED)
-            io_registers[addr - IO_REG] = val;
-            break;
+        // INTERRUPTS
+        case IF_REG:   set_interrupt_flags(val); break;
 
+        // SOUND CH1
+        case NR10_REG: bus.ports.nr10 = val; break;
+        case NR11_REG: bus.ports.nr11 = val; break;
+        case NR12_REG: bus.ports.nr12 = val; break;
+        case NR13_REG: bus.ports.nr13 = val; break;
+        case NR14_REG: bus.ports.nr14 = val; break;
+
+        // SOUND CH2
+        case NR21_REG: bus.ports.nr21 = val; break;
+        case NR22_REG: bus.ports.nr22 = val; break;
+        case NR23_REG: bus.ports.nr23 = val; break;
+        case NR24_REG: bus.ports.nr24 = val; break;
+
+        // SOUND CH3  
+        case NR30_REG: bus.ports.nr30 = val; break;
+        case NR31_REG: bus.ports.nr31 = val; break;
+        case NR32_REG: bus.ports.nr32 = val; break;
+        case NR33_REG: bus.ports.nr33 = val; break;
+        case NR34_REG: bus.ports.nr34 = val; break;
+
+        // SOUND CH4
+        case NR41_REG: bus.ports.nr41 = val; break;
+        case NR42_REG: bus.ports.nr42 = val; break;
+        case NR43_REG: bus.ports.nr43 = val; break;
+        case NR44_REG: bus.ports.nr44 = val; break;
+
+        // SOUND CTRL
+        case NR50_REG: bus.ports.nr50 = val; break;
+        case NR51_REG: bus.ports.nr51 = val; break;
+        case NR52_REG: bus.ports.nr52 = val; break;
+
+        // LCD/PPU
         case LCDC_REG:
         case STAT_REG:
         case SCY_REG:
         case SCX_REG:
+        case LY_REG:
         case LYC_REG:
         case DMA_REG:
         case BGP_REG:
         case OBP0_REG:
         case OBP1_REG:
         case WY_REG:
-        case WX_REG:
-            // TODO (YES YOU BANDIT): IMPLEMENT PPU
-            io_registers[addr - IO_REG] = val;
-            break;
-
-        case LY_REG:
-            // LY IS READ-ONLY
-            break;
-
-        case NR10_REG:
-        case NR11_REG:
-        case NR12_REG:
-        case NR13_REG:
-        case NR14_REG:
-        case NR21_REG:
-        case NR22_REG:
-        case NR23_REG:
-        case NR24_REG:
-        case NR30_REG:
-        case NR31_REG:
-        case NR32_REG:
-        case NR33_REG:
-        case NR34_REG:
-        case NR41_REG:
-        case NR42_REG:
-        case NR43_REG:
-        case NR44_REG:
-        case NR50_REG:
-        case NR51_REG:
-        case NR52_REG:
-            // TODO: IMPLEMENT SOUND
-            io_registers[addr - IO_REG] = val;
-            break;
+        case WX_REG:   lcd_write(addr, val); break;
 
         default:
-            printf("BAD IO WRITE: 0x%04X = 0x%02X\n", addr, val);
+            LOG_WARN(LOG_BUS, "BAD IO WRITE: 0x%04X = 0x%02X\n", addr, val);
             break;
     }
 }
 
 u8 read_from_bus(u16 addr) {
-    // ROM BANKS (0x0000 - 0x7FFF)
-    if (addr < VRAM_START) {
-        return read_cart(addr);
-    }
-    
-    // VRAM (0x8000 - 0x9FFF)
-    if (addr < RAM_START) {
-        return vram_read(addr); // char data
-    }
-    
-    // EXTERNAL RAM (0xA000 - 0xBFFF)
-    if (addr < WRAM_START) {
-        return read_cart_ram(addr - RAM_START);
-    }
-    
-    // WRAM (0xC000 - 0xDFFF)
-    if (addr < ECHO_RAM) {
-        return wram[addr - WRAM_START];
-    }
-    
-    // ECHO RAM (0xE000 - 0xFDFF)
-    if (addr < OAM_START) {
-        return wram[addr - ECHO_RAM];  // MIRRORS WRAM
-    }
-    
-    // OAM (0xFE00 - 0xFE9F)
-    if (addr < PROHIB_START) {
-        if(dma_tx()){
-            return 0xFF;
+    // BOOTROM OVERRIDE WHEN ENABLED
+    if (addr < 0x100) {
+        if (get_bootrom_enable()) {
+            return bus.bootrom[addr];
         }
-        return oam_read(addr);
+        return read_cart(addr);  // FALLBACK TO CART
     }
+
+    // MAIN MEMORY MAP
+    if (addr < VRAM_START)     return read_cart(addr);
+    if (addr < RAM_START)      return vram_read(addr);
+    if (addr < WRAM_START)     return read_cart_ram(addr - RAM_START);
+    if (addr < ECHO_RAM)       return bus.wram[addr - WRAM_START];
+    if (addr < OAM_START)      return bus.wram[addr - ECHO_RAM];
+    if (addr < PROHIB_START)   return get_dma_active() ? 0xFF : oam_read(addr);
+    if (addr < HMEM_START)     return 0xFF;  // PROHIBITED
+    if (addr < HRAM)          return read_io(addr);
+    if (addr < IE_REG)        return bus.hram[addr - HRAM];
     
-    // PROHIBITED (0xFEA0 - 0xFEFF)
-    if (addr < HMEM_START) {
-        return 0xFF;  // USUALLY RETURNS ALL 1S
-    }
-    
-    // IO REGISTERS (0xFF00 - 0xFF7F)
-    if (addr < HRAM) {
-        return read_io(addr);
-    }
-    
-    // HRAM (0xFF80 - 0xFFFE)
-    if (addr < IE_REG) {
-        return hram[addr - HRAM];
-    }
-    
-    // IE REGISTER (0xFFFF)
-    return ie_register;
+    return get_interrupt_enable();
 }
 
 void write_to_bus(u16 addr, u8 val) {
-    // ROM BANKS (0x0000 - 0x7FFF)
-    if (addr < VRAM_START) {
-        write_to_cart(addr, val);  // HANDLE BANK SWITCHING
-        return;
+    // MAIN MEMORY MAP
+    if (addr < VRAM_START)     write_to_cart(addr, val);
+    else if (addr < RAM_START) vram_write(addr, val);
+    else if (addr < WRAM_START) write_cart_ram(addr - RAM_START, val);
+    else if (addr < ECHO_RAM)  bus.wram[addr - WRAM_START] = val;
+    else if (addr < OAM_START) bus.wram[addr - ECHO_RAM] = val;
+    else if (addr < PROHIB_START) {
+        if (!get_dma_active()) oam_write(addr, val);
     }
-    
-    // VRAM (0x8000 - 0x9FFF)
-    if (addr < RAM_START) {
-        vram_write(addr, val);
+    else if (addr < HMEM_START) return;  // PROHIBITED
+    else if (addr < HRAM)     write_io(addr, val);
+    else if (addr < IE_REG)   bus.hram[addr - HRAM] = val;
+    else set_interrupt_enable(val);
+}
+
+void load_bootrom_data(u8* data, u32 size) {
+    if (size > 0x100) size = 0x100;
+    memcpy(bus.bootrom, data, size);
+}
+
+u8* get_memory_ptr(u16 addr) {
+    // ONLY ALLOW DIRECT ACCESS TO WORK/HIGH RAM
+    if (addr >= WRAM_START && addr < ECHO_RAM) {
+        return &bus.wram[addr - WRAM_START];
     }
-    
-    // EXTERNAL RAM (0xA000 - 0xBFFF)
-    if (addr < WRAM_START) {
-        write_cart_ram(addr - RAM_START, val);
-        return;
+    if (addr >= HRAM && addr < IE_REG) {
+        return &bus.hram[addr - HRAM];
     }
-    
-    // WRAM (0xC000 - 0xDFFF)
-    if (addr < ECHO_RAM) {
-        wram[addr - WRAM_START] = val;
-        return;
+    return NULL;
+}
+
+void debug_dump_bootrom(u8 num_bytes) {
+    LOG_DEBUG(LOG_BUS, "BOOTROM DUMP (%d BYTES): ", num_bytes);
+    for (u8 i = 0; i < num_bytes; i++) {
+        LOG_DEBUG(LOG_BUS, "%02X ", bus.bootrom[i]);
     }
-    
-    // ECHO RAM (0xE000 - 0xFDFF)
-    if (addr < OAM_START) {
-        wram[addr - ECHO_RAM] = val;  // MIRRORS WRAM
-        return;
-    }
-    
-    // OAM (0xFE00 - 0xFE9F)
-    if (addr < PROHIB_START) {
-        if(dma_tx()){
-            return;
-        }
-        oam_write(addr, val);
-        return;
-    }
-    
-    // PROHIBITED (0xFEA0 - 0xFEFF)
-    if (addr < HMEM_START) {
-        return;  // WRITES ARE IGNORED
-    }
-    
-    // IO REGISTERS (0xFF00 - 0xFF7F)
-    if (addr < HRAM) {
-        write_io(addr, val);
-        return;
-    }
-    
-    // HRAM (0xFF80 - 0xFFFE)
-    if (addr < IE_REG) {
-        hram[addr - HRAM] = val;
-        return;
-    }
-    
-    // IE REGISTER (0xFFFF)
-    ie_register = val;
+    LOG_DEBUG(LOG_BUS, "\n");
 }

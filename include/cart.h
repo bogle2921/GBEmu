@@ -1,46 +1,97 @@
 #ifndef CART_H
 #define CART_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
+
 #include "config.h"
+#include "bus.h"
+#include <time.h>
+#include <string.h>
 
-struct rom_header{      // Content of header bytes: https://gbdev.io/pandocs/The_Cartridge_Header.html
-    u8 entry[4];        // 0100-0103 — Entry point (After boot logo, jumps to $0100, then cartridge main)
-    u8 logo[0x30];      // 0104-0133 — Nintendo logo (BMP Image displayed on boot. Must match specific hex dump otherwise wont run)
-    char title[16];     // 0134-0143 — Title (Contains uppercase ASCII. If title is less than 16 char, remaining bytes should be $00 padded)
-    /* UNCOMMENT FOR NEWER TARGET SYSTEM, SHOULD PROBABLY DO THIS PROGRAMATICALLY
-    char man_code[4];   // 013F-0142 — Manufacturer code (Purpose Unknown, this only applies to newer models)
-    u8 cgb_flag;        // 0143 — CGB flag (Color Mode, this only applies to newer models) */
-    u16 license_new;    // 0144–0145 — New licensee code (Only applies if old license is exactly $33)
-    u8 sgb;             // 0146 — SGB flag (Super Gameboy Cartridge Support)
-    u8 type;            // 0147 — Cartridge type
-    u8 size_rom;        // 0148 — ROM size code ( 32 KiB × (1 << <value>) )
-    u8 size_ram;        // 0149 — RAM size code (Only applies if cart type includes "RAM" in name, else set to 0 / $00 )
-    u8 dest;            // 014A — Destination code (Region Specifier)
-    u8 license;         // 014B — Old licensee code (Only used for pre-SGB. If val is $33, use new licensee code instead)
-    u8 version;         // 014C — Mask ROM version number (Usually $00)
-    u8 checksum;        // 014D — Header checksum (8-bit checksum computed from the cartridge header bytes $0134–014C)
+// CART TYPES
+typedef enum {
+   NO_MBC = 0x00,
+   MBC1 = 0x01,
+   MBC1_RAM = 0x02, 
+   MBC1_RAM_BATTERY = 0x03,
+   MBC2 = 0x05,
+   MBC2_BATTERY = 0x06,
+   MBC3_TIMER_BATTERY = 0x0F,
+   MBC3_TIMER_RAM_BATTERY = 0x10,
+   MBC3 = 0x11,
+   MBC3_RAM = 0x12,
+   MBC3_RAM_BATTERY = 0x13,
+   MBC5 = 0x19,
+   MBC5_RAM = 0x1A,
+   MBC5_RAM_BATTERY = 0x1B
+} cart_type;
+
+// 0x0100-0x014F
+struct rom_header {
+   u8 entry[4];         // ENTRY POINT
+   u8 logo[48];         // NINTENDO LOGO
+   char title[16];      // GAME TITLE  
+   u16 license_new;     // NEW LICENSE CODE
+   u8 sgb;              // SGB FLAG
+   u8 type;             // CARTRIDGE TYPE
+   u8 size_rom;         // ROM SIZE
+   u8 size_ram;         // RAM SIZE  
+   u8 dest;             // DESTINATION CODE
+   u8 license;          // OLD LICENSE CODE
+   u8 version;          // ROM VERSION
+   u8 checksum;         // HEADER CHECKSUM
+   u16 global_checksum; // GLOBAL CHECKSUM
 };
 
-struct cartridge{
-    char filename[1024];
-    u32 rom_size;
-    u8 *rom_data;
-    u8 *ram_data;
-    bool ram_enabled;
-    struct rom_header* header;
+// CART STATE
+struct cartridge {
+   // FILE
+   char filename[1024];
+   char boot_filename[1024];
+   u32 boot_rom_size;
+
+   // MEMORY
+   u8* rom_data;
+   u8* ram_data;
+   u32 rom_size;
+   u32 ram_size;
+   struct rom_header* header;
+
+   // MBC STATE
+   cart_type mbc_type;
+   bool ram_enabled;
+   bool has_battery;
+   bool has_rtc;
+   u8 current_rom_bank;
+   u8 current_ram_bank; 
+   u8 banking_mode;
+
+   // RTC STATE (MBC3)
+   u8 rtc_reg[5];    // S,M,H,DL,DH - NO IDEA WHAT THESE ARE USED FOR
+   bool rtc_latched;
+   time_t rtc_last;
 };
+
+extern struct cartridge c;
 
 bool load_cartridge(const char* cart);
-void describe_cartridge(const struct cartridge* cart);
-bool validate_header(const struct rom_header* header);
-bool validate_checksum(const u8* rom_data, u8 expected_checksum);
-bool validate_global_checksum(const u8* rom_data, u32 rom_size);
 u8 read_cart(u16 addr);
 void write_to_cart(u16 addr, u8 val);
 u8 read_cart_ram(u16 addr);
 void write_cart_ram(u16 addr, u8 val);
+
+// VALIDATION
+void describe_cartridge(const struct cartridge* cart);
+bool validate_header(const struct rom_header* header);
+bool validate_checksum(const u8* rom_data, u8 expected_checksum);
+bool validate_global_checksum(const u8* rom_data, u32 rom_size);
+
+// BOOTROM
+bool load_bootrom(const char* bootrom);
+void set_bootrom_enable(bool enable);
+bool get_bootrom_enable(void);
+
+// SAVE/RESTORE
+bool save_battery(void);
+bool load_battery(void);
+
 #endif
