@@ -113,8 +113,8 @@ static void write_io(u16 addr, u8 val) {
         // BOOTROM CONTROL
         case BROM_UMAP:
             if (val) {
-                use_bootrom = false;
-                LOG_WARN(LOG_BUS, "BOOTROM DISABLED\n");
+                set_bootrom_enable(false);
+                LOG_WARN(LOG_BUS, "BOOTROM DISABLED + INTERRUPTS ENABLED\n");
             }
             break;
 
@@ -205,8 +205,8 @@ u8 read_from_bus(u16 addr) {
     if (addr < OAM_START)      return bus.wram[addr - ECHO_RAM];
     if (addr < PROHIB_START)   return get_dma_active() ? 0xFF : oam_read(addr);
     if (addr < HMEM_START)     return 0xFF;  // PROHIBITED
-    if (addr < HRAM)          return read_io(addr);
-    if (addr < IE_REG)        return bus.hram[addr - HRAM];
+    if (addr < HRAM)           return read_io(addr);
+    if (addr < IE_REG)         return bus.hram[addr - HRAM];
     
     return get_interrupt_enable();
 }

@@ -148,8 +148,9 @@ static u32 get_rom_offset(u16 addr) {
         case MBC1:
         case MBC1_RAM:
         case MBC1_RAM_BATTERY:  // MBC1: 125 ROM BANKS
-            bank = c.current_rom_bank & (max_banks - 1);
+            bank = c.current_rom_bank;
             if (bank == 0) bank = 1;
+            bank &= (max_banks - 1); // APPLYING MASK *AFTER* BANK 0 CHECK
             break;
 
         case MBC2:
@@ -196,7 +197,10 @@ static u32 get_ram_offset(u16 addr) {
         case MBC1:
         case MBC1_RAM:
         case MBC1_RAM_BATTERY:  // MBC1: 4 RAM BANKS
-            return (c.current_ram_bank & 0x03) * RAM_BANK_SIZE + ram_addr;
+            if (c.banking_mode == 1) {
+                return (c.current_ram_bank & 0x03) * RAM_BANK_SIZE + ram_addr;
+            }
+            return ram_addr;  // IN MODE 0, ONLY USE BANK 0
 
         case MBC2:
         case MBC2_BATTERY:  // MBC2: 512x4 BIT RAM
@@ -389,6 +393,7 @@ bool load_cartridge(const char* cart) {
     }
 
     // INIT BANKING
+    memset(c.ram_data, 0, c.ram_size); // ZERO OUT RAM
     c.current_rom_bank = 1;
     c.current_ram_bank = 0;
     c.banking_mode = 0;

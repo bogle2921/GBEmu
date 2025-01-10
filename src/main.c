@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
     // INIT LOGGER - CAREFUL SETTING INIT LEVEL TO TRACE...
     // LOG_TRACE WILL BASICALLY WRITE AS FAST AS YOU CAN WRITE TO DISK
     #ifdef DEBUG
-    logger_init(LOG_INFO);
+    logger_init(LOG_DEBUG);
     #else
     logger_init(LOG_INFO);
     #endif

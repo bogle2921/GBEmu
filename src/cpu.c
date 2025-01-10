@@ -1067,7 +1067,6 @@ static void di(void) {
 
 // static void ei(void) { CPU.cycles = 4; }          // EI - ENABLE INTERRUPTS
 static void ei(void) {
-    LOG_WARN(LOG_CPU, "SCHEDULING IME - INSIDE EI OPCODE\n");
     CPU.ime_scheduled = 1;
     CPU.cycles = 4;
 }
@@ -1199,9 +1198,6 @@ static void rst_n(void) {
     // INDEX FROM OPCODE
     u8 vector_idx = ((CPU.opcode & 0x38) >> 3);
     u16 target_addr = RST_VECTORS[vector_idx];
-
-    LOG_TRACE(LOG_CPU, "RST DEBUG: opcode=0x%02X, mask=0x%02X, idx=%d, addr=0x%04X\n",
-           CPU.opcode, (CPU.opcode & 0x38), vector_idx, target_addr);
     
     // PUSH CURRENT PC ONTO STACK
     CPU.reg.sp--;
@@ -1211,8 +1207,6 @@ static void rst_n(void) {
     
     CPU.reg.pc = target_addr;
     CPU.cycles = 16;
-
-    LOG_TRACE(LOG_CPU, "RST: PC was 0x%04X, now 0x%04X\n", CPU.reg.pc - 1, CPU.reg.pc);
 }
 
 // ------------------------------------ RETURNS ------------------------------------
@@ -1493,7 +1487,7 @@ void cpu_step(void) {
     LOG_TRACE(LOG_CPU, "EXECUTION COMPLETE - PC NOW AT: 0x%04X\n", CPU.reg.pc);
 
     if (was_scheduled) {
-        LOG_WARN(LOG_CPU, "ENABLING IME (WAS SCHEDULED FROM PREVIOUS INSTRUCTION)\n");
+        LOG_TRACE(LOG_CPU, "ENABLING IME (WAS SCHEDULED FROM PREVIOUS INSTRUCTION)\n");
         CPU.ime = 1;
         CPU.ime_scheduled = 0;
     }

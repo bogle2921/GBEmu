@@ -5,11 +5,11 @@
 #include "cpu.h"  // NEED CPU FOR REGISTER ACCESS
 
 typedef enum {
-    INT_VBLANK = 1,
-    INT_LCD = 2,
-    INT_TIMER = 4,
-    INT_SERIAL = 8,
-    INT_JOYPAD = 16
+    INT_VBLANK = 0x01,
+    INT_LCD    = 0x02,
+    INT_TIMER  = 0x04,
+    INT_SERIAL = 0x08,
+    INT_JOYPAD = 0x10
 } interrupts;
 
 void interrupt_init();

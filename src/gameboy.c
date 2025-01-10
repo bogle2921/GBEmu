@@ -26,6 +26,11 @@ void gameboy_init() {
     TICKS_PER_FRAME = PERF_FREQ / 60;  // TARGET 60 FPS, THIS IS MUCH BETTER
 }
 
+void gameboy_destroy() {
+    // UNINITIALIZE STUFF HERE
+    graphics_cleanup();
+}
+
 void run_gb() {
     u64 last_tick = SDL_GetPerformanceCounter();
     u64 frame_time = PERF_FREQ / 60;
@@ -45,10 +50,10 @@ void run_gb() {
                 // RUN PPU, TIMER, DMA FOR EACH M-CYCLE (4 T-CYCLES)
                 for (int t = 0; t < cycles; t += 4) {
                     timer_tick();
+                    dma_tick();
                     for (int i = 0; i < 4; i++) {
                         graphics_tick();
                     }
-                    dma_tick();
                 }
             }
         }
@@ -65,4 +70,6 @@ void run_gb() {
         last_tick = SDL_GetPerformanceCounter();
         GB.cycles_this_frame -= CYCLES_PER_FRAME;
     }
+
+    gameboy_destroy();
 }
