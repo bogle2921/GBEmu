@@ -10,13 +10,13 @@ int main(int argc, char** argv) {
     // INIT LOGGER - CAREFUL SETTING INIT LEVEL TO TRACE...
     // LOG_TRACE WILL BASICALLY WRITE AS FAST AS YOU CAN WRITE TO DISK
     #ifdef DEBUG
-    logger_init(LOG_DEBUG);
+    logger_init(LOG_TRACE);
     #else
-    logger_init(LOG_INFO);
+    logger_init(LOG_DEBUG);
     #endif
 
-    if (argc < 3) {
-        LOG_WARN(LOG_MAIN, "Usage: %s <bootrom.bin> <game.gb>\n", argv[0]);
+    if (argc < 2) {
+        LOG_WARN(LOG_MAIN, "Usage: %s [bootrom.bin] <game.gb>\n", argv[0]);
         return 1;
     }
 
@@ -27,13 +27,13 @@ int main(int argc, char** argv) {
     gameboy_init();
 
     // LOAD BOOT ROM
-    if (!load_bootrom(argv[1])) {
-        LOG_ERROR(LOG_MAIN, "Failed to load bootrom: %s\n", argv[1]);
+    if (argc == 3 && !load_bootrom(argv[1])) {
+        LOG_WARN(LOG_MAIN, "Bootrom missing / error: %s\n", argv[1]);
         return 1;
     }
 
     // LOAD CARTRIDGE
-    if (!load_cartridge(argv[2])) {
+    if (!load_cartridge(argv[argc == 3 ? 2 : 1])) {
         LOG_ERROR(LOG_MAIN, "Failed to load cartridge: %s\n", argv[2]);
         return 1;
     }

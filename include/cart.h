@@ -87,8 +87,6 @@ bool validate_global_checksum(const u8* rom_data, u32 rom_size);
 
 // BOOTROM
 bool load_bootrom(const char* bootrom);
-void set_bootrom_enable(bool enable);
-bool get_bootrom_enable(void);
 
 // SAVE/RESTORE
 bool save_battery(void);

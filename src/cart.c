@@ -110,16 +110,6 @@ bool load_bootrom(const char* bootrom) {
     return true;
 }
 
-void set_bootrom_enable(bool enable) {
-    extern bool use_bootrom;  // REF THE GLOBAL
-    use_bootrom = enable;
-}
-
-bool get_bootrom_enable() {
-    extern bool use_bootrom;  // REF THE GLOBAL
-    return use_bootrom;
-}
-
 static bool is_mbc1() {
     return (c.header->type >= 1 && c.header->type <= 3);
 }

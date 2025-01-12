@@ -46,6 +46,7 @@ typedef struct {
     u8 mode;
     u32 mode_clock;
     u8 line;
+    u8 window_line;
     bool lyc_interrupt;
     
     // LCD REGISTERS 

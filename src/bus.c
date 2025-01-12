@@ -26,8 +26,6 @@ static struct {
     } ports;
 } bus = {0};
 
-extern bool use_bootrom;
-
 void init_bus() {
     memset(&bus.wram, 0, sizeof(bus.wram));
     memset(&bus.hram, 0, sizeof(bus.hram));
@@ -204,7 +202,7 @@ u8 read_from_bus(u16 addr) {
     if (addr < ECHO_RAM)       return bus.wram[addr - WRAM_START];
     if (addr < OAM_START)      return bus.wram[addr - ECHO_RAM];
     if (addr < PROHIB_START)   return get_dma_active() ? 0xFF : oam_read(addr);
-    if (addr < HMEM_START)     return 0xFF;  // PROHIBITED
+    if (addr < IO_START)     return 0xFF;  // PROHIBITED
     if (addr < HRAM)           return read_io(addr);
     if (addr < IE_REG)         return bus.hram[addr - HRAM];
     
@@ -221,7 +219,7 @@ void write_to_bus(u16 addr, u8 val) {
     else if (addr < PROHIB_START) {
         if (!get_dma_active()) oam_write(addr, val);
     }
-    else if (addr < HMEM_START) return;  // PROHIBITED
+    else if (addr < IO_START) return;  // PROHIBITED
     else if (addr < HRAM)     write_io(addr, val);
     else if (addr < IE_REG)   bus.hram[addr - HRAM] = val;
     else set_interrupt_enable(val);

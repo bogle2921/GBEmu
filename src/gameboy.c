@@ -7,8 +7,6 @@ static gameboy GB;
 static u64 PERF_FREQ;
 static u64 TICKS_PER_FRAME;
 
-bool use_bootrom = false;  // EXPOSED FOR BUS ACCESS
-
 gameboy* get_gb() {
     return &GB;
 }
@@ -28,6 +26,7 @@ void gameboy_init() {
 
 void gameboy_destroy() {
     // UNINITIALIZE STUFF HERE
+    LOG_DEBUG(LOG_MAIN, "CLEANING UP GAMEBOY MEMORY, GRAPHICS, ETC.\n");
     graphics_cleanup();
 }
 
@@ -72,4 +71,14 @@ void run_gb() {
     }
 
     gameboy_destroy();
+}
+
+void set_bootrom_enable(bool enable) {
+    GB.bootrom_enabled = enable;
+    LOG_DEBUG(LOG_CART, "SETTING BOOTROM STATUS TO: enabled=%d", GB.bootrom_enabled);
+}
+
+bool get_bootrom_enable() {
+    LOG_DEBUG(LOG_CART, "BOOTROM STATUS CHECK: enabled=%d", GB.bootrom_enabled);
+    return GB.bootrom_enabled;
 }

@@ -341,6 +341,7 @@ void graphics_init() {
     graphics.obp1 = 0x00;
     graphics.wy = 0x00;
     graphics.wx = 0x00;
+    graphics.window_line = 0;
 
     // INITIALIZE PALETTES BEFORE WINDOW CREATION
     update_palette(&graphics.bgp, graphics.bg_colors, graphics.bgp);

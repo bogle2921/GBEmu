@@ -21,10 +21,10 @@ static bool get_timer_bit(void) {
 }
 
 void timer_init(void) {
-    timer.div = 0x00;
-    timer.tima = 0;
-    timer.tma = 0;
-    timer.tac = 0;
+    timer.div = 0xABCC; // POWER-ON DEFAULT
+    timer.tima = 0x00;
+    timer.tma = 0x00;
+    timer.tac = 0x00;
     timer.prev_bit = false;
     LOG_INFO(LOG_TIMER, "TIMER INITIALIZED AT DIV=0x%04X\n", timer.div);
 }
