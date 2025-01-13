@@ -69,6 +69,11 @@ struct cartridge {
    u8 rtc_reg[5];    // S,M,H,DL,DH - NO IDEA WHAT THESE ARE USED FOR
    bool rtc_latched;
    time_t rtc_last;
+
+   // TODO: DYNAMICALLY SET RENDERING CLOCK MODES BASED ON COLOR MODE
+   // CGB
+   bool is_cgb;
+   u8 mode3_length;
 };
 
 extern struct cartridge c;
@@ -87,11 +92,12 @@ bool validate_global_checksum(const u8* rom_data, u32 rom_size);
 
 // BOOTROM
 bool load_bootrom(const char* bootrom);
-void set_bootrom_enable(bool enable);
-bool get_bootrom_enable(void);
 
 // SAVE/RESTORE
 bool save_battery(void);
 bool load_battery(void);
+
+// GETTERS/SETTERS
+// get_cart_mode(void);
 
 #endif

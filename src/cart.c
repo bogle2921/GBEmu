@@ -70,6 +70,20 @@ static const char* LICENSES[0xA5] = {
     [0xA4] = "Konami (Yu-Gi-Oh!)"
 };
 
+// CGB (OFFSET 0x0143)
+static void detect_cgb_mode(const u8* rom_data) {
+    // ONLY CHECK THE ACTUAL CGB FLAGS - NO SPECIAL CASES
+    if (rom_data[0x0143] == 0x80 || rom_data[0x0143] == 0xC0) {
+        c.is_cgb = true; 
+        c.mode3_length = 172;
+        LOG_INFO(LOG_MAIN, "DETECTED GAME BOY COLOR CART");
+    } else {
+        c.is_cgb = false;
+        c.mode3_length = 168;
+        LOG_INFO(LOG_MAIN, "STANDARD GAME BOY CART");
+    }
+}
+
 bool load_bootrom(const char* bootrom) {
     LOG_INFO(LOG_MAIN, "LOADING BOOTROM: %s", bootrom);
 
@@ -102,22 +116,11 @@ bool load_bootrom(const char* bootrom) {
 
     // COPY DIRECTLY TO BUS BOOTROM BUFFER 
     load_bootrom_data(boot_data, c.boot_rom_size);
-    set_bootrom_enable(true);
 
     LOG_INFO(LOG_MAIN, "BOOTROM LOADED SUCCESSFULLY");
     fclose(boot_rom_file);
     debug_dump_bootrom(8);
     return true;
-}
-
-void set_bootrom_enable(bool enable) {
-    extern bool use_bootrom;  // REF THE GLOBAL
-    use_bootrom = enable;
-}
-
-bool get_bootrom_enable() {
-    extern bool use_bootrom;  // REF THE GLOBAL
-    return use_bootrom;
 }
 
 static bool is_mbc1() {
@@ -137,25 +140,95 @@ static bool is_mbc5() {
 }
 
 static u32 get_rom_offset(u16 addr) {
-    if (addr < ROM_BANK) return addr;  // BANK 0 FIXED
+    // BANK 0 IS ALWAYS FIXED
+    if (addr < ROM_BANK) return addr;
 
-    if (is_mbc1()) {
-        return (c.current_rom_bank * ROM_BANK) + (addr - ROM_BANK);
-    }
+    u32 max_banks = c.rom_size / ROM_BANK;
+    u32 bank = 0;
     
-    if (is_mbc3()) {
-        return (c.current_rom_bank * ROM_BANK) + (addr - ROM_BANK);
+    // GET BANK NUMBER BASED ON MBC TYPE
+    switch(c.mbc_type) {
+        case MBC1:
+        case MBC1_RAM:
+        case MBC1_RAM_BATTERY:  // MBC1: 125 ROM BANKS
+            bank = c.current_rom_bank;
+            if (bank == 0) bank = 1;
+            bank &= (max_banks - 1); // APPLYING MASK *AFTER* BANK 0 CHECK
+            break;
+
+        case MBC2:
+        case MBC2_BATTERY:  // MBC2: 16 ROM BANKS
+            bank = c.current_rom_bank & 0x0F; // 16 BANKS MAX
+            break;
+
+        case MBC3:
+        case MBC3_RAM:
+        case MBC3_RAM_BATTERY:
+        case MBC3_TIMER_BATTERY:
+        case MBC3_TIMER_RAM_BATTERY:    // MBC3: 128 ROM BANKS
+        case MBC5:
+        case MBC5_RAM:
+        case MBC5_RAM_BATTERY:  // MBC5: 512 ROM BANKS (PLUS RUMBLE)
+            bank = c.current_rom_bank & (max_banks - 1);
+            break;
+
+        default: // NO MBC + FALLBACK
+            return addr;
     }
 
-    // FALLBACK TO NO BANKING
-    return addr;
+    u32 offset = (bank * ROM_BANK) + (addr - ROM_BANK);
+    if (offset >= c.rom_size) {
+        LOG_ERROR(LOG_CART, "ROM BANK ACCESS OUT OF BOUNDS: BANK=%u ADDR=%04X OFF=%08X SIZE=%08X", 
+                 bank, addr, offset, c.rom_size);
+        return addr;
+    }
+
+    LOG_TRACE(LOG_CART, "ROM ACCESS: BANK=%u ADDR=%04X OFF=%08X", bank, addr, offset);
+    return offset;
 }
 
 static u32 get_ram_offset(u16 addr) {
-    if (is_mbc1() || is_mbc3()) {
-        return (c.current_ram_bank * RAM_BANK_SIZE) + (addr - RAM_START);
+    // VALIDATE RAM RANGE
+    if (addr < RAM_START || addr >= WRAM_START) {
+        LOG_ERROR(LOG_BUS, "RAM ACCESS OUT OF RANGE: 0x%04X", addr);
+        return 0;
     }
-    return addr - RAM_START;
+
+    u16 ram_addr = addr - RAM_START;
+
+    switch(c.mbc_type) {
+        case MBC1:
+        case MBC1_RAM:
+        case MBC1_RAM_BATTERY:  // MBC1: 4 RAM BANKS
+            if (c.banking_mode == 1) {
+                return (c.current_ram_bank & 0x03) * RAM_BANK_SIZE + ram_addr;
+            }
+            return ram_addr;  // IN MODE 0, ONLY USE BANK 0
+
+        case MBC2:
+        case MBC2_BATTERY:  // MBC2: 512x4 BIT RAM
+            return ram_addr & 0x1FF;  // 9-BIT ADDRESSING
+
+        case MBC3:
+        case MBC3_RAM:
+        case MBC3_RAM_BATTERY:
+        case MBC3_TIMER_BATTERY:
+        case MBC3_TIMER_RAM_BATTERY:  // MBC3: 4 RAM BANKS + RTC
+            if (c.current_ram_bank <= 0x03) {
+                return c.current_ram_bank * RAM_BANK_SIZE + ram_addr;
+            } else if (c.current_ram_bank >= 0x08 && c.current_ram_bank <= 0x0C) {
+                return ram_addr;  // RTC REGISTERS MAP DIRECTLY
+            }
+            return 0;
+
+        case MBC5:
+        case MBC5_RAM: 
+        case MBC5_RAM_BATTERY:  // MBC5: 16 RAM BANKS
+            return (c.current_ram_bank & 0x0F) * RAM_BANK_SIZE + ram_addr;
+
+        default:  // NO MBC OR UNKNOWN
+            return ram_addr;
+    }
 }
 
 bool load_cartridge(const char* cart) {
@@ -203,6 +276,9 @@ bool load_cartridge(const char* cart) {
     c.header->title[15] = '\0';
     describe_cartridge(&c);
 
+    // CGB DETECTION
+    detect_cgb_mode(c.rom_data);
+
     if (!validate_checksum(c.rom_data, c.header->checksum)) {
         LOG_WARN(LOG_MAIN, "HEADER CHECKSUM VALIDATION FAILED");
     }
@@ -228,6 +304,15 @@ bool load_cartridge(const char* cart) {
             return false;
     }
 
+    // ROM BANK VALIDATION
+    u32 expected_size = rom_banks * ROM_BANK;
+    if (c.rom_size != expected_size) {
+        LOG_ERROR(LOG_MAIN, "ROM SIZE MISMATCH: GOT=%u EXPECTED=%u BANKS=%u",
+                 c.rom_size, expected_size, rom_banks);
+        free(c.rom_data);
+        return false;
+    }
+
     // RAM SIZE AND BATTERY
     c.has_battery = false;
     c.has_rtc = false;
@@ -248,7 +333,6 @@ bool load_cartridge(const char* cart) {
         case MBC2_BATTERY:
             c.mbc_type = c.header->type;
             c.has_battery = (c.header->type == MBC2_BATTERY);
-            c.ram_size = 512;  // FIXED 512x4 BIT RAM
             break;
             
         case MBC3_TIMER_BATTERY:
@@ -276,24 +360,27 @@ bool load_cartridge(const char* cart) {
             return false;
     }
 
-    // ALLOCATE RAM IF NEEDED (EXCEPT MBC2 WHICH WAS HANDLED ABOVE)
+    // ALLOCATE RAM IF NEEDED
     if (c.mbc_type != MBC2 && c.mbc_type != MBC2_BATTERY) {
         switch(c.header->size_ram) {
-            case 0x00: c.ram_size = 0; break;
-            case 0x01: c.ram_size = 2048; break;     // 2KB
-            case 0x02: c.ram_size = 8192; break;     // 8KB
-            case 0x03: c.ram_size = 32768; break;    // 32KB
-            case 0x04: c.ram_size = 131072; break;   // 128KB
-            case 0x05: c.ram_size = 65536; break;    // 64KB
+            case 0x00: c.ram_size = 0;      break;
+            case 0x01: c.ram_size = 2048;   break; // 2KB
+            case 0x02: c.ram_size = 8192;   break; // 8KB
+            case 0x03: c.ram_size = 32768;  break; // 32KB
+            case 0x04: c.ram_size = 131072; break; // 128KB
+            case 0x05: c.ram_size = 65536;  break; // 64KB
             default:
                 LOG_WARN(LOG_MAIN, "UNKNOWN RAM SIZE CODE: 0x%02X", c.header->size_ram);
                 c.ram_size = 0;
         }
+    } else {
+        // MBC2 512 BYTES
+        c.ram_size = 512;
     }
 
     // ALLOCATE RAM IF NEEDED
     if (c.ram_size > 0) {
-        c.ram_data = calloc(1, c.ram_size);
+        c.ram_data = calloc(1, c.ram_size); // ALREADY ZEROED BY calloc()
         if (!c.ram_data) {
             LOG_ERROR(LOG_MAIN, "FAILED TO ALLOCATE RAM: %u BYTES", c.ram_size);
             free(c.rom_data);
@@ -319,7 +406,6 @@ bool load_cartridge(const char* cart) {
     c.banking_mode = 0;
     c.ram_enabled = false;
 
-    // LOADING IF POSSIBLE
     load_battery();
 
     LOG_INFO(LOG_MAIN, "CARTRIDGE LOADED: TYPE=%02X RAM=%uKB BATTERY=%d RTC=%d",
@@ -340,7 +426,7 @@ u8 read_cart(u16 addr) {
 
 u8 read_cart_ram(u16 addr) {
     // CHECK RAM ACCESS
-    if (!c.ram_enabled || !c.ram_data) {
+    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled || !c.ram_data) {
         return 0xFF;
     }
 
@@ -403,7 +489,7 @@ void write_to_cart(u16 addr, u8 val) {
 
 void write_cart_ram(u16 addr, u8 val) {
     // CHECK RAM ACCESS PERMISSION
-    if (!c.ram_enabled || !c.ram_data) {
+    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled || !c.ram_data) {
         return;
     }
 

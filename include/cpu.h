@@ -17,6 +17,7 @@ typedef struct {
 typedef struct {
     registers reg;
     bool halted;
+    bool halt_bug;
     bool stopped;
     bool stepping;
     bool ime;
@@ -40,9 +41,9 @@ typedef struct {
 #define GET_FLAG_N  ((CPU.reg.f >> 6) & 0x01)
 #define GET_FLAG_H  ((CPU.reg.f >> 5) & 0x01)
 #define GET_FLAG_C  ((CPU.reg.f >> 4) & 0x01)
-#define GET_HIGH_BYTE(n) ((n >> 8) & 0xFF)
-#define GET_LOW_BYTE(n) (n & 0xFF)
-#define MAKE_WORD(h, l) ((h << 8) | l)
+#define GET_HIGH_BYTE(sl) ((sl >> 8) & 0xFF)
+#define GET_LOW_BYTE(fl) (fl & 0xFF)
+#define MAKE_WORD(fl,sl) ((fl << 8) | sl)
 
 // SETUP AND CYCLE CPU
 void cpu_init(void);

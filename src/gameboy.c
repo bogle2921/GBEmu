@@ -4,70 +4,79 @@
 #include <string.h>
 
 static gameboy GB;
-static Uint64 PERF_FREQ;
-static Uint64 LAST_PERF_TICK;
-
-bool use_bootrom = false;  // EXPOSED FOR BUS ACCESS
+static u64 PERF_FREQ;
+static u64 TICKS_PER_FRAME;
 
 gameboy* get_gb() {
     return &GB;
 }
 
-void gameboy_init() {
+void gameboy_init(bool bootrom_enabled) {
     memset(&GB, 0, sizeof(GB));
-    
-    // REMOVE BUS INIT SINCE IT'S DONE IN MAIN
-    interrupt_init();  // INTERRUPTS FIRST
+    GB.bootrom_enabled = bootrom_enabled;
+
+    // NOTE: DONT TRY TO INIT RAM HERE, IT SHOULD ALREADY BE DONE
+    interrupt_init();  // INTERRUPTS FIRST  
     timer_init();      // THEN OTHER SUBSYSTEMS
     cpu_init();
     graphics_init();
     
     PERF_FREQ = SDL_GetPerformanceFrequency();
-    LAST_PERF_TICK = SDL_GetPerformanceCounter();
+    TICKS_PER_FRAME = PERF_FREQ / 60;  // TARGET 60 FPS, THIS IS MUCH BETTER
 }
 
-static Uint64 get_elapsed_ns() {
-    Uint64 now = SDL_GetPerformanceCounter();
-    Uint64 diff = now - LAST_PERF_TICK;
-    LAST_PERF_TICK = now;
-    return (Uint64)((double)diff * 1000000000.0 / (double)PERF_FREQ);
+void gameboy_destroy() {
+    // UNINITIALIZE STUFF HERE
+    LOG_DEBUG(LOG_MAIN, "CLEANING UP GAMEBOY MEMORY, GRAPHICS, ETC.\n");
+    graphics_cleanup();
 }
 
 void run_gb() {
-    GB.cycles_this_frame = 0;
+    u64 last_tick = SDL_GetPerformanceCounter();
+    u64 frame_time = PERF_FREQ / 60;
 
     while (!GB.die) {
         handle_events();
 
+        // SYNC TO 4194304 CYCLES PER SECOND (59.7275 HZ)
         while (GB.cycles_this_frame < CYCLES_PER_FRAME) {
-            handle_interrupts();
-            cpu_step();
-            u8 c = get_cpu_cycles();
-            GB.cycles_this_frame += c;
-            gb_cycles(c);
-            reset_cpu_cycles();
+            if (!GB.paused) {
+                
+                cpu_step();
+                handle_interrupts();
+                
+                u8 cycles = get_cpu_cycles();
+                GB.cycles_this_frame += cycles;
+                
+                // RUN PPU, TIMER, DMA FOR EACH M-CYCLE (4 T-CYCLES)
+                for (int t = 0; t < cycles; t += 4) {
+                    timer_tick();
+                    dma_tick();
+                    graphics_tick();
+                }
+            }
         }
 
-        Uint64 ns = get_elapsed_ns();
-        if (ns < NS_PER_FRAME) {
-            Uint64 remain = NS_PER_FRAME - ns;
-            Uint32 remain_ms = (Uint32)(remain / 1000000ULL);
-            SDL_Delay(remain_ms);
+        // FRAME TIMING SYNC 
+        u64 now = SDL_GetPerformanceCounter();
+        u64 elapsed = now - last_tick;
+        
+        if (elapsed < frame_time) {
+            u64 delay = frame_time - elapsed;
+            SDL_Delay((u32)(delay * 1000 / PERF_FREQ));
         }
-
+        
+        last_tick = SDL_GetPerformanceCounter();
         GB.cycles_this_frame -= CYCLES_PER_FRAME;
     }
 
-    graphics_cleanup();
+    gameboy_destroy();
 }
 
-void gb_cycles(int cycles) {
-    for (int i = 0; i < cycles; i++) {
-        timer_tick();
-        for (int j = 0; j < 4; j++) {
-            GB.ticks++;
-            graphics_tick();
-        }
-        dma_tick();
-    }
+void set_bootrom_enable(bool enable) {
+    GB.bootrom_enabled = enable;
+}
+
+bool get_bootrom_enable() {
+    return GB.bootrom_enabled;
 }

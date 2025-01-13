@@ -22,20 +22,16 @@ static struct {
         u8 nr30, nr31, nr32, nr33, nr34;  // CHANNEL 3 
         u8 nr41, nr42, nr43, nr44;        // CHANNEL 4
         u8 nr50, nr51, nr52;              // CONTROL
+        u8 wave_ram[16];                  // WAVE PATTERN RAM
     } ports;
 } bus = {0};
 
-extern bool use_bootrom;
-
 void init_bus() {
+    memset(&bus, 0, sizeof(bus));
     memset(&bus.wram, 0, sizeof(bus.wram));
     memset(&bus.hram, 0, sizeof(bus.hram));
     memset(&bus.io, 0, sizeof(bus.io));
     memset(&bus.ports, 0, sizeof(bus.ports));
-
-    // SET RST $38 HANDLER
-    bus.wram[0x0038] = 0x00;  // NOP 
-    bus.wram[0x0039] = 0xD9;  // RETI
 }
 
 static u8 read_io(u16 addr) {
@@ -86,6 +82,10 @@ static u8 read_io(u16 addr) {
         case NR51_REG: return bus.ports.nr51;
         case NR52_REG: return bus.ports.nr52;
 
+        // WAVE PATTERN RAM
+        case WAVE_RAM_START ... WAVE_RAM_START + 0xF:
+            return bus.ports.wave_ram[addr - WAVE_RAM_START];
+
         // LCD/PPU
         case LCDC_REG:
         case STAT_REG:
@@ -112,8 +112,8 @@ static void write_io(u16 addr, u8 val) {
         // BOOTROM CONTROL
         case BROM_UMAP:
             if (val) {
-                use_bootrom = false;
-                LOG_WARN(LOG_BUS, "BOOTROM DISABLED\n");
+                set_bootrom_enable(false);
+                LOG_WARN(LOG_BUS, "BOOTROM DISABLED + INTERRUPTS ENABLED\n");
             }
             break;
 
@@ -162,6 +162,11 @@ static void write_io(u16 addr, u8 val) {
         case NR51_REG: bus.ports.nr51 = val; break;
         case NR52_REG: bus.ports.nr52 = val; break;
 
+        // WAVE PATTERN RAM
+        case WAVE_RAM_START ... WAVE_RAM_START + 0xF:
+            bus.ports.wave_ram[addr - WAVE_RAM_START] = val;
+            break;
+
         // LCD/PPU
         case LCDC_REG:
         case STAT_REG:
@@ -194,13 +199,13 @@ u8 read_from_bus(u16 addr) {
     // MAIN MEMORY MAP
     if (addr < VRAM_START)     return read_cart(addr);
     if (addr < RAM_START)      return vram_read(addr);
-    if (addr < WRAM_START)     return read_cart_ram(addr - RAM_START);
+    if (addr < WRAM_START)     return read_cart_ram(addr);
     if (addr < ECHO_RAM)       return bus.wram[addr - WRAM_START];
     if (addr < OAM_START)      return bus.wram[addr - ECHO_RAM];
     if (addr < PROHIB_START)   return get_dma_active() ? 0xFF : oam_read(addr);
-    if (addr < HMEM_START)     return 0xFF;  // PROHIBITED
-    if (addr < HRAM)          return read_io(addr);
-    if (addr < IE_REG)        return bus.hram[addr - HRAM];
+    if (addr < IO_START)     return 0xFF;  // PROHIBITED
+    if (addr < HRAM)           return read_io(addr);
+    if (addr < IE_REG)         return bus.hram[addr - HRAM];
     
     return get_interrupt_enable();
 }
@@ -209,13 +214,13 @@ void write_to_bus(u16 addr, u8 val) {
     // MAIN MEMORY MAP
     if (addr < VRAM_START)     write_to_cart(addr, val);
     else if (addr < RAM_START) vram_write(addr, val);
-    else if (addr < WRAM_START) write_cart_ram(addr - RAM_START, val);
+    else if (addr >= RAM_START && addr < WRAM_START) write_cart_ram(addr, val);
     else if (addr < ECHO_RAM)  bus.wram[addr - WRAM_START] = val;
     else if (addr < OAM_START) bus.wram[addr - ECHO_RAM] = val;
     else if (addr < PROHIB_START) {
         if (!get_dma_active()) oam_write(addr, val);
     }
-    else if (addr < HMEM_START) return;  // PROHIBITED
+    else if (addr < IO_START) return;  // PROHIBITED
     else if (addr < HRAM)     write_io(addr, val);
     else if (addr < IE_REG)   bus.hram[addr - HRAM] = val;
     else set_interrupt_enable(val);

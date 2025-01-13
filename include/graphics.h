@@ -34,6 +34,16 @@
 #define LCDC_ENABLE        0x80
 
 typedef struct {
+    u8 bgcp[64];        // CGB BG COLOR PALETTE RAM 
+    u8 obcp[64];        // CGB OBJ COLOR PALETTE RAM
+    u8 bgpi;            // BG PALETTE INDEX
+    u8 obpi;            // OBJ PALETTE INDEX
+    u8 vram_bank;       // CURRENT VRAM BANK
+    u8 vram_banks[2][VRAM_BANK_SIZE];  // TWO VRAM BANKS FOR CGB
+    bool auto_increment; // PALETTE AUTO INCREMENT
+} cgb_graphics;
+
+typedef struct {
     u8 y;
     u8 x; 
     u8 tile;
@@ -42,10 +52,10 @@ typedef struct {
 
 typedef struct {
     // PPU STATE
-    bool lcd_enabled;
     u8 mode;
     u32 mode_clock;
     u8 line;
+    u8 window_line;
     bool lyc_interrupt;
     
     // LCD REGISTERS 
@@ -61,6 +71,11 @@ typedef struct {
     u8 obp1;
     u8 wy;
     u8 wx;
+
+    // CBG COLOR
+    cgb_graphics cgb;
+    u32 cgb_bg_colors[8][4];
+    u32 cgb_sprite_colors[8][4];
 
     // MEMORY
     u8 vram[VRAM_BANK_SIZE];

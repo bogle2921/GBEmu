@@ -21,10 +21,14 @@ static bool get_timer_bit(void) {
 }
 
 void timer_init(void) {
-    timer.div = 0x00;
-    timer.tima = 0;
-    timer.tma = 0;
-    timer.tac = 0;
+    if (get_bootrom_enable()) {
+        timer.div = 0x00;    // START AT 0 WITH BOOTROM
+    } else {
+        timer.div = 0xABCC;  // POST-BOOT VALUE
+    }
+    timer.tima = 0x00;
+    timer.tma = 0x00;
+    timer.tac = 0x00;
     timer.prev_bit = false;
     LOG_INFO(LOG_TIMER, "TIMER INITIALIZED AT DIV=0x%04X\n", timer.div);
 }
@@ -44,10 +48,8 @@ void timer_tick(void) {
     
     // FALLING EDGE DETECTION (1->0 TRANSITION)
     if (timer.prev_bit && !current_bit) {
-        timer.tima++;
-        
         // CHECK FOR OVERFLOW
-        if (timer.tima == 0) {
+        if (++timer.tima == 0) {
             timer.tima = timer.tma;     // LOAD MODULO VALUE
             interrupt_req(INT_TIMER);   // REQUEST INTERRUPT
             LOG_WARN(LOG_TIMER, "TIMER OVERFLOW - LOADED TMA=0x%02X\n", timer.tma);

@@ -4,7 +4,7 @@
 /*
 THIS FILE IS ALSO A BIT MUCH.
 OP-CODES WERE DONE IN A REALLY WEIRD WAY WITH SKELETON FIRST,
-THEN ADDED MEAT ON BONES, BUT COMMENTED OUT SKELETON. TODO: CLEAN?
+THEN ADDED MEAT ON BONES, BUT COMMENTED OUT SKELETON.
 VERY MUCH DOUBT EVERYTHING IS WORKING AS GB INTENDS.
 */
 
@@ -23,7 +23,7 @@ static opcode_fn cb_opcode_table[256];
 static u8* const REGISTERS[] = {
     &CPU.reg.b, &CPU.reg.c, &CPU.reg.d, &CPU.reg.e,
     &CPU.reg.h, &CPU.reg.l, NULL, &CPU.reg.a
-};
+}; // REG REPR: | b c d e h l NULL a |
 
 static inline u8 read_byte(void) {
     u8 val = read_from_bus(CPU.reg.pc++);
@@ -39,23 +39,51 @@ static inline u16 read_word(void) {
 }
 
 // GET/SET REG OR HL CONDITIONALLY
-// TODO: DECIDED TO ADD THIS WHEN I GOT TO THE CB OPCODES, 
-// PLS REPLACE IF/ELSE 0x06 IN OTHER OPS. CPU CYCLES WILL STILL BE SET CONDITIONALLY IN HANDLERS.
 static u8 get_reg_or_hl(u8 reg_idx) {
-    if (reg_idx == 0x06) {  // IS HL
+    if (reg_idx == 0x06) {  // HL
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
         return read_from_bus(hl);
+    }
+
+    if (reg_idx >= 8 || REGISTERS[reg_idx] == NULL) {
+        LOG_ERROR(LOG_CPU, "UNEXPECTED REGISTER ACCESS: 0x%02X", reg_idx);
+        return 0xFF;
     }
     return *REGISTERS[reg_idx];
 }
 
 static void set_reg_or_hl(u8 reg_idx, u8 value) {
-    if (reg_idx == 0x06) {  // IS HL
+    if (reg_idx == 0x06) {  // HL
         u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
         write_to_bus(hl, value);
-    } else {
-        *REGISTERS[reg_idx] = value;
+        return;
     }
+
+    if (reg_idx >= 8 || REGISTERS[reg_idx] == NULL) {
+        LOG_ERROR(LOG_CPU, "UNEXPECTED REGISTER ACCESS: 0x%02X", reg_idx);
+        return;
+    }
+    *REGISTERS[reg_idx] = value;
+}
+
+// DEBUGGING -----------------------------------------------------------------------
+
+static void debug_opcode_state(bool is_before) {
+    LOG_DEBUG(LOG_CPU, "\n--- %s [0x%02X] @ PC:0x%04X ---", 
+        is_before ? "BEFORE" : "AFTER", CPU.opcode, CPU.reg.pc);
+    
+    LOG_DEBUG(LOG_CPU, "REGS: A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X",
+        CPU.reg.a, CPU.reg.f,
+        CPU.reg.b, CPU.reg.c,
+        CPU.reg.d, CPU.reg.e,
+        CPU.reg.h, CPU.reg.l);
+        
+    LOG_DEBUG(LOG_CPU, "FLAGS: Z:%d N:%d H:%d C:%d",
+        GET_FLAG_Z, GET_FLAG_N,
+        GET_FLAG_H, GET_FLAG_C);
+        
+    LOG_DEBUG(LOG_CPU, "SP:0x%04X CYCLES:%u IME:%d HALT:%d",
+        CPU.reg.sp, CPU.cycles, CPU.ime, CPU.halted);
 }
 
 
@@ -70,115 +98,96 @@ static void op_nop(void) {                           // NOP
 
 // ---------------------------------- 8-BIT LOADS ----------------------------------
 
-// static void ld_r_r(void) { CPU.cycles = 4; }      // LD r,r - LOAD REG R1 WITH REG R2
+// LD r,r - LOAD REG R1 WITH REG R2
 static void ld_r_r(void) {
     u8 dst_reg = (CPU.opcode >> 3) & 0x07;
     u8 src_reg = CPU.opcode & 0x07;
-    
-    // Handle (HL) special case
-    if (src_reg == 0x06) {
-        u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-        *REGISTERS[dst_reg] = read_from_bus(hl);
-        CPU.cycles = 8;
-        //gb_cycles(2);
-    } else if (dst_reg == 0x06) {
-        u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-        write_to_bus(hl, *REGISTERS[src_reg]);
-        CPU.cycles = 8;
-        //gb_cycles(2);
-    } else {
-        *REGISTERS[dst_reg] = *REGISTERS[src_reg];
-        CPU.cycles = 4;
-        //gb_cycles(1);
-    }
+
+    set_reg_or_hl(dst_reg, get_reg_or_hl(src_reg)); // REG || HL
+    CPU.cycles = (dst_reg == 0x06 || src_reg == 0x06) ? 8 : 4;
 }
-// static void ld_r_n(void) { CPU.cycles = 8; }      // LD r,n - LOAD REG R WITH IMMEDIATE VALUE N
-// static void ld_r_hl(void) { CPU.cycles = 8; }     // LD r,(HL) - ALL HL CASES HANDLED INLINE
-// static void ld_hl_r(void) { CPU.cycles = 8; }     // LD (HL),r - ALL HL CASES HANDLED INLINE
-// static void ld_hl_n(void) { CPU.cycles = 12; }    // LD (HL),n - ALL HL CASES HANDLED INLINE
+
+// LD r,n - LOAD REG R WITH IMMEDIATE VALUE N
+// LD r,(HL) - ALL HL CASES HANDLED INLINE
+// LD (HL),r - ALL HL CASES HANDLED INLINE
+// LD (HL),n - ALL HL CASES HANDLED INLINE
 static void ld_r_n(void) {
     u8 dst_reg = (CPU.opcode >> 3) & 0x07;
     u8 n = read_byte();
     
-    if (dst_reg == 0x06) {  // WE HANDLE MOST LOAD HL'S HERE
-        u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-        write_to_bus(hl, n);
-        CPU.cycles = 12;
-    } else {
-        *REGISTERS[dst_reg] = n;
-        CPU.cycles = 8;
-    }
+    set_reg_or_hl(dst_reg, n); // REG || HL
+    CPU.cycles = (dst_reg == 0x06) ? 12 : 8;
 }
 
-// static void ld_a_bc(void) { CPU.cycles = 8; }     // LD A,(BC) - LOAD A FROM MEMORY POINTED AT BY BC
+// LD A,(BC) - LOAD A FROM MEMORY POINTED AT BY BC
 static void ld_a_bc(void) {
     u16 addr = MAKE_WORD(CPU.reg.b, CPU.reg.c); // BC
     CPU.reg.a = read_from_bus(addr);
     CPU.cycles = 8;
 }
-// static void ld_a_de(void) { CPU.cycles = 8; }     // LD A,(DE) - LOAD A FROM MEMORY POINTED AT BY DE
+
+// LD A,(DE) - LOAD A FROM MEMORY POINTED AT BY DE
 static void ld_a_de(void) {
     u16 addr = MAKE_WORD(CPU.reg.d, CPU.reg.e); // DE
     CPU.reg.a = read_from_bus(addr);
     CPU.cycles = 8;
-
 }
 
-// static void ld_a_nn(void) { CPU.cycles = 16; }    // LD A,(nn) - LOAD A FROM ABSOLUTE ADDR AT NN
+// LD A,(nn) - LOAD A FROM ABSOLUTE ADDR AT NN
 static void ld_a_nn(void) {
-    u16 addr = read_word(); // I THINK NN WOULD REFER TO THE IMMEDIATE 16 BIT VALUE
+    u16 addr = read_word();
     CPU.reg.a = read_from_bus(addr);
     CPU.cycles = 16;
 }
 
-// static void ld_bc_a(void) { CPU.cycles = 8; }     // LD (BC),A - STORE A INTO MEMORY POINTED BY BC
+// LD (BC),A - STORE A INTO MEMORY POINTED BY BC
 static void ld_bc_a(void) {
     u16 addr = MAKE_WORD(CPU.reg.b, CPU.reg.c);
     write_to_bus(addr, CPU.reg.a);
     CPU.cycles = 8;
 }
 
-// static void ld_de_a(void) { CPU.cycles = 8; }     // LD (DE),A - STORE A INTO MEMORY POINTED BY DE
+// LD (DE),A - STORE A INTO MEMORY POINTED BY DE
 static void ld_de_a(void) {
     u16 addr = MAKE_WORD(CPU.reg.d, CPU.reg.e);
     write_to_bus(addr, CPU.reg.a);
     CPU.cycles = 8;
 }
 
-// static void ld_nn_a(void) { CPU.cycles = 16; }    // LD (nn),A - STORE A INTO DIRECT MEMORY ADDRESS
+// LD (nn),A - STORE A INTO DIRECT MEMORY ADDRESS
 static void ld_nn_a(void) {
     u16 addr = read_word();
     write_to_bus(addr, CPU.reg.a);
     CPU.cycles = 16;
 }
 
-// static void ld_a_ff_n(void) { CPU.cycles = 12; }  // LDH A,(n) - LOAD A FROM HIGH MEM RNG OFFSET n (FF00+n)
+// LDH A,(n) - LOAD A FROM HIGH MEM RNG OFFSET n (FF00+n)
 static void ld_a_ff_n(void) {
     u8 offset = read_byte(); // N WOULD BE THE FIRST IMMEDIATE 8 BIT VALUE
     CPU.reg.a = read_from_bus(IO_START + offset); // HIGH MEM RNG STARTS AT FF00, SEE CONFIG.H
     CPU.cycles = 12;
 }
 
-// static void ld_ff_n_a(void) { CPU.cycles = 12; }  // LDH (n),A - STORE A INTO HIGH MEM RNG OFFSET n (FF00+n)
+// LDH (n),A - STORE A INTO HIGH MEM RNG OFFSET n (FF00+n)
 static void ld_ff_n_a(void) {
     u8 offset = read_byte();
     write_to_bus(IO_START + offset, CPU.reg.a);
     CPU.cycles = 12;
 }
 
-// static void ld_a_ff_c(void) { CPU.cycles = 8; }   // LD A,(C) - LOAD A FROM HIGH MEM RNG OFFSET C (FF00+C)
+// LD A,(C) - LOAD A FROM HIGH MEM RNG OFFSET C (FF00+C)
 static void ld_a_ff_c(void) {
     CPU.reg.a = read_from_bus(IO_START + CPU.reg.c);
     CPU.cycles = 8;
 }
 
-// static void ld_ff_c_a(void) { CPU.cycles = 8; }   // LD (C),A - STORE A INTO HIGH MEM RNG OFFSET C (FF00+C)
+// LD (C),A - STORE A INTO HIGH MEM RNG OFFSET C (FF00+C)
 static void ld_ff_c_a(void) {
     write_to_bus(IO_START + CPU.reg.c, CPU.reg.a);
     CPU.cycles = 8;
 }
 
-// static void ldi_hl_a(void) { CPU.cycles = 8; }    // LDI (HL),A - LOAD A *TO* HL AND *INCR* HL
+// LDI (HL),A - LOAD A *TO* HL AND *INCR* HL
 static void ldi_hl_a(void) {
     u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
     write_to_bus(hl, CPU.reg.a);
@@ -188,7 +197,7 @@ static void ldi_hl_a(void) {
     CPU.cycles = 8;
 }
 
-// static void ldi_a_hl(void) { CPU.cycles = 8; }    // LDI A,(HL) - LOAD A *FROM* HL AND *INCR* HL
+// LDI A,(HL) - LOAD A *FROM* HL AND *INCR* HL
 static void ldi_a_hl(void) {
     u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
     CPU.reg.a = read_from_bus(hl);
@@ -198,7 +207,7 @@ static void ldi_a_hl(void) {
     CPU.cycles = 8;
 }
 
-// static void ldd_hl_a(void) { CPU.cycles = 8; }    // LDD (HL),A - LOAD A *TO* HL AND *DECR* HL
+// LDD (HL),A - LOAD A *TO* HL AND *DECR* HL
 static void ldd_hl_a(void) {
     u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
     write_to_bus(hl, CPU.reg.a);
@@ -208,7 +217,7 @@ static void ldd_hl_a(void) {
     CPU.cycles = 8;
 }
 
-// static void ldd_a_hl(void) { CPU.cycles = 8; }    // LDD A,(HL) - LOAD A *FROM* HL AND *DECR* HL
+// LDD A,(HL) - LOAD A *FROM* HL AND *DECR* HL
 static void ldd_a_hl(void) {
     u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
     CPU.reg.a = read_from_bus(hl);
@@ -220,11 +229,10 @@ static void ldd_a_hl(void) {
 
 // --------------------------------- 16-BIT LOADS ----------------------------------
 
-// static void ld_rr_nn(void) { CPU.cycles = 12; }   // LD rr,nn - LOAD 16 BIT NN (IMMEDIATE) VAL INTO REG PAIR
+// LD rr,nn - LOAD 16 BIT NN (IMMEDIATE) VAL INTO REG PAIR
 static void ld_rr_nn(void) {
-    u8 reg_pair = (CPU.opcode >> 4) & 0x03; // CAN USE OPCODE TO GET TARGETS LIKE IN 8 BIT LOAD
-                                            // SHIFT 4 AND MASK 0x03 FOR REGISTER PAIR TARGET
-    u16 nn = read_word();                   // IMMEDIATE NN VAL COMES FROM TWO BYTES (WORD) READ IN
+    u8 reg_pair = (CPU.opcode & 0x30) >> 4; // MASK BITS 5-4 THEN SHIFT - THIS BUG WAS NEARLY IMPOSSIBLE TO FIND HOLY CRAP
+    u16 nn = read_word();
     
     switch(reg_pair) {
         case 0x00: // BC
@@ -242,11 +250,14 @@ static void ld_rr_nn(void) {
         case 0x03: // SP
             CPU.reg.sp = nn;
             break;
+        default:  // SHOULD NOT HIT THIS EVER
+            LOG_ERROR(LOG_CPU, "ERROR INVALID REG PAIR IN LD_RR_NN %d\n", reg_pair);
+            return;
     }
     CPU.cycles = 12;
 }
 
-// static void ld_nn_sp(void) { CPU.cycles = 20; }   // LD (nn),SP - STORE SP AT ADDR POINTED TO BY IMMEDIATE VAL
+// LD (nn),SP - STORE SP AT ADDR POINTED TO BY IMMEDIATE VAL
 static void ld_nn_sp(void) {
     u16 addr = read_word();
     write_to_bus(addr, GET_LOW_BYTE(CPU.reg.sp));
@@ -254,13 +265,13 @@ static void ld_nn_sp(void) {
     CPU.cycles = 20;
 }
 
-// static void ld_sp_hl(void) { CPU.cycles = 8; }    // LD SP,HL - LOAD HL INTO SP
+// LD SP,HL - LOAD HL INTO SP
 static void ld_sp_hl(void) {
     CPU.reg.sp = MAKE_WORD(CPU.reg.h, CPU.reg.l);
     CPU.cycles = 8;
 }
 
-// static void push_rr(void) { CPU.cycles = 16; }    // PUSH rr - PUSH REGISTER PAIR ONTO STACK
+// PUSH rr - PUSH REGISTER PAIR ONTO STACK
 static void push_rr(void) {
     u8 reg_pair = (CPU.opcode >> 4) & 0x03;  // SAME DYNAMIC HANDLING FROM SHIFT/MASK OPCODE LIKE LD RR NN
     u8 high, low;                            // SHIFT 4 AND MASK 0x03 FOR REGISTER PAIR *SOURCE*
@@ -282,6 +293,9 @@ static void push_rr(void) {
             high = CPU.reg.a;
             low = CPU.reg.f & 0xF0;         // ONLY UPPER BITS, MASK FLAGS
             break;
+        default:  // SHOULD NOT HIT THIS EVER
+            LOG_ERROR(LOG_CPU, "ERROR INVALID REG PAIR IN PUSH_RR %d\n", reg_pair);
+            return;
     }
     
     CPU.reg.sp--;
@@ -292,7 +306,7 @@ static void push_rr(void) {
     CPU.cycles = 16;
 }
 
-// static void pop_rr(void) { CPU.cycles = 12; }     // POP rr
+// POP rr
 static void pop_rr(void) {
     u8 reg_pair = (CPU.opcode >> 4) & 0x03; // SAME DYNAMIC HANDLING FROM SHIFT/MASK OPCODE LIKE PUSH RR, BUT *TARGET*
     u8 low = read_from_bus(CPU.reg.sp);     // READ LOW/HIGH FROM SP, INCREMENT SP ADDR PER
@@ -317,6 +331,9 @@ static void pop_rr(void) {
             CPU.reg.a = high;
             CPU.reg.f = low & 0xF0;         // CAN ALWAYS ASSUME THESE LOWER 4 BITS ARE ZERO
             break;
+        default:  // SHOULD NOT HIT THIS EVER
+            LOG_ERROR(LOG_CPU, "ERROR INVALID REG PAIR IN POP_RR %d, LOW: %d HIGH: %d\n", reg_pair, low, high);
+            return;
     }
     
     CPU.cycles = 12;
@@ -324,17 +341,13 @@ static void pop_rr(void) {
 
 // ----------------------------------- 8-BIT ALU -----------------------------------
 
-// static void add_a_r(void) { CPU.cycles = 4; }     // ADD A,r - ADD A WITH REGISTER, UNLESS HL THEN VALUE AT HL
+// ADD A,r - ADD A WITH REGISTER, UNLESS HL THEN VALUE AT HL
 static void add_a_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
-    u8 value;
-    if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        CPU.cycles = 8;
-    } else {
-        value =  *REGISTERS[reg_idx];
-        CPU.cycles = 4;
-    }
+    u8 value = (reg_idx == 0x06)
+        ? read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l))
+        : *REGISTERS[reg_idx];
+
     u16 result = CPU.reg.a + value;
     
     SET_FLAG_Z((result & 0xFF) == 0);
@@ -343,9 +356,10 @@ static void add_a_r(void) {
     SET_FLAG_C(result > 0xFF);
     
     CPU.reg.a = result & 0xFF;
+    CPU.cycles = (reg_idx == 0x06) ? 8 : 4;
 }
 
-// static void add_a_n(void) { CPU.cycles = 8; }     // ADD A,n - ADD A WITH IMMEDIATE VALUE N
+// ADD A,n - ADD A WITH IMMEDIATE VALUE N
 static void add_a_n(void) {
     u8 value = read_byte();
     u16 result = CPU.reg.a + value;
@@ -359,44 +373,41 @@ static void add_a_n(void) {
     CPU.cycles = 8;
 }
 
-// static void adc_a_r(void) { CPU.cycles = 4; }     // ADC A,r - ADD WITH CARRY
+// ADC A,r - ADD WITH CARRY
 static void adc_a_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
-    u8 value;
-    if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        CPU.cycles = 8;
-    } else {
-        value =  *REGISTERS[reg_idx];
-        CPU.cycles = 4;
-    }
+    u8 value = (reg_idx == 0x06)
+        ? read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l))
+        : *REGISTERS[reg_idx];
+
     u8 carry = GET_FLAG_C;
     u16 result = CPU.reg.a + value + carry;
-    
+
     SET_FLAG_Z((result & 0xFF) == 0);
     SET_FLAG_N(0);
     SET_FLAG_H((CPU.reg.a & 0x0F) + (value & 0x0F) + carry > 0x0F);
     SET_FLAG_C(result > 0xFF);
-    
+
     CPU.reg.a = result & 0xFF;
+    CPU.cycles = (reg_idx == 0x06) ? 8 : 4;
 }
 
-// static void adc_a_n(void) { CPU.cycles = 8; }     // ADC A,n - ADD IMMEDIATE WITH CARRY
+// ADC A,n - ADD IMMEDIATE WITH CARRY
 static void adc_a_n(void) {
     u8 value = read_byte();
     u8 carry = GET_FLAG_C;
     u16 result = CPU.reg.a + value + carry;
-    
+
     SET_FLAG_Z((result & 0xFF) == 0);
     SET_FLAG_N(0);
     SET_FLAG_H((CPU.reg.a & 0x0F) + (value & 0x0F) + carry > 0x0F);
     SET_FLAG_C(result > 0xFF);
-    
+
     CPU.reg.a = result & 0xFF;
     CPU.cycles = 8;
 }
 
-// static void sub_a_r(void) { CPU.cycles = 4; }     // SUB A,r - SUBTRACT FROM A
+// SUB A,r - SUBTRACT FROM A
 static void sub_a_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value;
@@ -412,97 +423,91 @@ static void sub_a_r(void) {
     SET_FLAG_Z((result & 0xFF) == 0);
     SET_FLAG_N(1);
     SET_FLAG_H((CPU.reg.a & 0x0F) < (value & 0x0F));
-    SET_FLAG_C(result > 0xFF);
+    SET_FLAG_C(value > CPU.reg.a);
     
     CPU.reg.a = result & 0xFF;
 }
 
-// static void sub_a_n(void) { CPU.cycles = 8; }     // SUB A,n - SUBTRACT IMMEDIATE FROM A
+// SUB A,n - SUBTRACT IMMEDIATE FROM A
 static void sub_a_n(void) {
     u8 value = read_byte();
     u16 result = CPU.reg.a - value;
-    
+
     SET_FLAG_Z((result & 0xFF) == 0);
     SET_FLAG_N(1);
     SET_FLAG_H((CPU.reg.a & 0x0F) < (value & 0x0F));
-    SET_FLAG_C(result > 0xFF);
-    
+    SET_FLAG_C(value > CPU.reg.a);
+
     CPU.reg.a = result & 0xFF;
     CPU.cycles = 8;
 }
 
-// static void sbc_a_r(void) { CPU.cycles = 4; }     // SBC A,r - SUBTRACT WITH CARRY FROM A
+// SBC A,r - SUBTRACT WITH CARRY FROM A
 static void sbc_a_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
-    u8 value;
-    if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        CPU.cycles = 8;
-    } else {
-        value =  *REGISTERS[reg_idx];
-        CPU.cycles = 4;
-    }
+    u8 value = (reg_idx == 0x06)
+        ? read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l))
+        : *REGISTERS[reg_idx];
+
     u8 carry = GET_FLAG_C;
     u16 result = CPU.reg.a - value - carry;
-    
+
     SET_FLAG_Z((result & 0xFF) == 0);
     SET_FLAG_N(1);
     SET_FLAG_H((CPU.reg.a & 0x0F) < ((value & 0x0F) + carry));
-    SET_FLAG_C(result > 0xFF);
-    
+    SET_FLAG_C((value + carry) > CPU.reg.a);
+
     CPU.reg.a = result & 0xFF;
+    CPU.cycles = (reg_idx == 0x06) ? 8 : 4;
 }
 
-// static void sbc_a_n(void) { CPU.cycles = 8; }     // SBC A,n - SUBTRACT IMMEDIATE WITH CARRY FROM A
+// SBC A,n - SUBTRACT IMMEDIATE WITH CARRY FROM A
 static void sbc_a_n(void) {
     u8 value = read_byte();
     u8 carry = GET_FLAG_C;
     u16 result = CPU.reg.a - value - carry;
-    
+
     SET_FLAG_Z((result & 0xFF) == 0);
     SET_FLAG_N(1);
     SET_FLAG_H((CPU.reg.a & 0x0F) < ((value & 0x0F) + carry));
-    SET_FLAG_C(result > 0xFF);
-    
+    SET_FLAG_C(value + carry > CPU.reg.a);
+
     CPU.reg.a = result & 0xFF;
     CPU.cycles = 8;
 }
 
-// static void and_r(void) { CPU.cycles = 4; }       // AND r - LOGICAL AND WITH REG
+// AND r - LOGICAL AND WITH REG
 static void and_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
-    u8 value;
-    if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        CPU.cycles = 8;
-    } else {
-        value =  *REGISTERS[reg_idx];
-        CPU.cycles = 4;
-    }
-    
+    u8 value = (reg_idx == 0x06)
+        ? read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l))
+        : *REGISTERS[reg_idx];
+
     CPU.reg.a &= value;
-    
+
     SET_FLAG_Z(CPU.reg.a == 0);
     SET_FLAG_N(0);
     SET_FLAG_H(1);
     SET_FLAG_C(0);
+
+    CPU.cycles = (reg_idx == 0x06) ? 8 : 4;
 }
 
-// static void and_n(void) { CPU.cycles = 8; }       // AND n - LOGICAL AND WITH IMMEDIATE N
+// AND n - LOGICAL AND WITH IMMEDIATE N
 static void and_n(void) {
     u8 value = read_byte();
-    
+
     CPU.reg.a &= value;
-    
+
     SET_FLAG_Z(CPU.reg.a == 0);
     SET_FLAG_N(0);
     SET_FLAG_H(1);
     SET_FLAG_C(0);
-    
+
     CPU.cycles = 8;
 }
 
-// static void xor_r(void) { CPU.cycles = 4; }       // XOR r - LOGICAL XOR WITH REG
+// XOR r - LOGICAL XOR WITH REG
 static void xor_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value;
@@ -522,7 +527,7 @@ static void xor_r(void) {
     SET_FLAG_C(0);
 }
 
-// static void xor_n(void) { CPU.cycles = 8; }       // XOR n - LOGICAL XOR WITH IMMEDIATE N
+// XOR n - LOGICAL XOR WITH IMMEDIATE N
 static void xor_n(void) {
     u8 value = read_byte();
     
@@ -536,7 +541,7 @@ static void xor_n(void) {
     CPU.cycles = 8;
 }
 
-// static void or_r(void) { CPU.cycles = 4; }        // OR r - LOGICAL OR WITH REG
+// OR r - LOGICAL OR WITH REG
 static void or_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value;
@@ -556,7 +561,7 @@ static void or_r(void) {
     SET_FLAG_C(0);
 }
 
-// static void or_n(void) { CPU.cycles = 8; }        // OR n - LOGICAL OR WITH IMMEDIATE N
+// OR n - LOGICAL OR WITH IMMEDIATE N
 static void or_n(void) {
     u8 value = read_byte();
     
@@ -570,153 +575,113 @@ static void or_n(void) {
     CPU.cycles = 8;
 }
 
-// static void cp_r(void) { CPU.cycles = 4; }        // CP r - COMPARE WITH REG (SUBTRACT BUT DON'T STORE)
+// CP r - COMPARE WITH REG (SUBTRACT BUT DON'T STORE)
 static void cp_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
-    u8 value;
-    if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        CPU.cycles = 8;
-    } else {
-        value =  *REGISTERS[reg_idx];
-        CPU.cycles = 4;
-    }
+    u8 value = get_reg_or_hl(reg_idx);
     u16 result = CPU.reg.a - value;
-    
-    SET_FLAG_Z((result & 0xFF) == 0);
-    SET_FLAG_N(1);
-    SET_FLAG_H((CPU.reg.a & 0x0F) < (value & 0x0F));
-    SET_FLAG_C(result > 0xFF);
+
+    SET_FLAG_Z((result & 0xFF) == 0);            // SET ZERO FLAG
+    SET_FLAG_N(1);                               // SET SUBTRACT FLAG
+    SET_FLAG_H((CPU.reg.a & 0x0F) < (value & 0x0F)); // SET HALF CARRY FLAG
+    SET_FLAG_C(value > CPU.reg.a);               // SET CARRY FLAG
+
+    CPU.cycles = (reg_idx == 0x06) ? 8 : 4;      // SET CYCLES
 }
 
-// static void cp_n(void) { CPU.cycles = 8; }        // CP n - COMPARE WITH IMMEDIATE N (SUBTRACT BUT DON'T STORE)
+// CP n - COMPARE WITH IMMEDIATE N (SUBTRACT BUT DON'T STORE)
 static void cp_n(void) {
     u8 value = read_byte();
     u16 result = CPU.reg.a - value;
-    
+
     SET_FLAG_Z((result & 0xFF) == 0);
     SET_FLAG_N(1);
     SET_FLAG_H((CPU.reg.a & 0x0F) < (value & 0x0F));
-    SET_FLAG_C(result > 0xFF);
-    
+    SET_FLAG_C(value > CPU.reg.a);
+
     CPU.cycles = 8;
 }
 
-// static void inc_r(void) { CPU.cycles = 4; }       // INC r - INCR REG BY 1 UNLESS HL (THEN VAL AT HL)
+// INC r - INCR REG BY 1 UNLESS HL (THEN VAL AT HL)
 static void inc_r(void) {
-    u8 reg_idx = (CPU.opcode >> 3) & 0x07; // SHIFT/MASK TO COVER MULTI OPCODES
-    u8 *reg = REGISTERS[reg_idx];
-    
-    if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-        u8 value = read_from_bus(MAKE_WORD(CPU.reg.h, CPU.reg.l));
-        u8 result = value + 1;
-        
-        SET_FLAG_Z(result == 0);
-        SET_FLAG_N(0);
-        SET_FLAG_H((value & 0x0F) == 0x0F);
-        
-        write_to_bus(hl, result);
-        CPU.cycles = 12;
-    } else {
-        u8 result = *reg + 1;
-        
-        SET_FLAG_Z(result == 0);
-        SET_FLAG_N(0);
-        SET_FLAG_H((*reg & 0x0F) == 0x0F);
-        
-        *reg = result;
-        CPU.cycles = 4;
-    }
+    u8 reg_idx = (CPU.opcode >> 3) & 0x07;
+    u8 value = get_reg_or_hl(reg_idx);
+    u8 result = value + 1;
+
+    SET_FLAG_Z(result == 0);
+    SET_FLAG_N(0);
+    SET_FLAG_H((value & 0x0F) == 0x0F);
+
+    set_reg_or_hl(reg_idx, result);
+    CPU.cycles = (reg_idx == 0x06) ? 12 : 4;
 }
 
-// static void dec_r(void) { CPU.cycles = 4; }       // DEC r - DECR REG BY 1 UNLESS HL (THEN VAL AT HL)
+// DEC r - DECR REG BY 1 UNLESS HL (THEN VAL AT HL)
 static void dec_r(void) {
-    u8 reg_idx = (CPU.opcode >> 3) & 0x07; // SHIFT/MASK TO COVER MULTI OPCODES
-    u8 *reg = REGISTERS[reg_idx];
-    
-    if (reg_idx == 0x06) {  // WE HANDLE HL'S HERE
-        u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-        u8 value = read_from_bus(hl);
-        u8 result = value - 1;
-        
-        SET_FLAG_Z(result == 0);
-        SET_FLAG_N(1);
-        SET_FLAG_H((value & 0x0F) == 0x00);
-        
-        write_to_bus(hl, result);
-        CPU.cycles = 12;
-    } else {
-        u8 result = *reg - 1;
-        
-        SET_FLAG_Z(result == 0);
-        SET_FLAG_N(1);
-        SET_FLAG_H((*reg & 0x0F) == 0x00);
-        
-        *reg = result;
-        CPU.cycles = 4;
-    }
+    u8 reg_idx = (CPU.opcode >> 3) & 0x07;
+    u8 value = get_reg_or_hl(reg_idx);
+    u8 result = value - 1;
+
+    SET_FLAG_Z(result == 0);
+    SET_FLAG_N(1);
+    SET_FLAG_H((value & 0x0F) == 0);
+
+    set_reg_or_hl(reg_idx, result);
+    CPU.cycles = (reg_idx == 0x06) ? 12 : 4;
 }
 
 // ---------------------------------- 16-BIT ALU -----------------------------------
 
-// static void add_hl_rr(void) { CPU.cycles = 8; }   // ADD HL,rr - ADD HL WITH 16-BIT REG
+// ADD HL,rr - ADD HL WITH 16-BIT REG
 static void add_hl_rr(void) {
     u8 reg_pair = (CPU.opcode >> 4) & 0x03;
     u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
     u16 value;
 
-    // GET VALUE FROM REG PAIR
-    if (reg_pair == 0x00) {        // BC
-        value = MAKE_WORD(CPU.reg.b, CPU.reg.c);
-    } else if (reg_pair == 0x01) { // DE
-        value = MAKE_WORD(CPU.reg.d, CPU.reg.e);
-    } else if (reg_pair == 0x02) { // HL
-        value = hl;
-    } else {                       // SP
-        value = CPU.reg.sp;
+    switch (reg_pair) {
+        case 0x00: value = MAKE_WORD(CPU.reg.b, CPU.reg.c); break; // BC
+        case 0x01: value = MAKE_WORD(CPU.reg.d, CPU.reg.e); break; // DE
+        case 0x02: value = hl; break;                              // HL
+        case 0x03: value = CPU.reg.sp; break;                      // SP
     }
 
     u32 result = hl + value;
-    
+
     SET_FLAG_N(0);
-    SET_FLAG_H((hl & 0x0FFF) + (value & 0x0FFF) > 0x0FFF);
+    SET_FLAG_H((hl & 0xFFF) + (value & 0xFFF) > 0xFFF);
     SET_FLAG_C(result > 0xFFFF);
-    
-    // STORE RESULT BACK IN HL
+
     CPU.reg.h = GET_HIGH_BYTE(result);
     CPU.reg.l = GET_LOW_BYTE(result);
-    
     CPU.cycles = 8;
 }
 
-// static void inc_rr(void) { CPU.cycles = 8; }      // INC rr - INCR 16-BIT REG
+// INC rr - INCR 16-BIT REG
 static void inc_rr(void) {
     u8 reg_pair = (CPU.opcode >> 4) & 0x03;
-    
-    if (reg_pair == 0x00) {        // BC
-        u16 bc = MAKE_WORD(CPU.reg.b, CPU.reg.c);
-        bc++;
-        CPU.reg.b = GET_HIGH_BYTE(bc);
-        CPU.reg.c = GET_LOW_BYTE(bc);
-    } else if (reg_pair == 0x01) { // DE
-        u16 de = MAKE_WORD(CPU.reg.d, CPU.reg.e);
-        de++;
-        CPU.reg.d = GET_HIGH_BYTE(de);
-        CPU.reg.e = GET_LOW_BYTE(de);
-    } else if (reg_pair == 0x02) { // HL
-        u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-        hl++;
-        CPU.reg.h = GET_HIGH_BYTE(hl);
-        CPU.reg.l = GET_LOW_BYTE(hl);
-    } else {                       // SP
-        CPU.reg.sp++;
+
+    switch (reg_pair) {
+        case 0x00: // BC
+            CPU.reg.c++;
+            if (CPU.reg.c == 0) CPU.reg.b++;
+            break;
+        case 0x01: // DE
+            CPU.reg.e++;
+            if (CPU.reg.e == 0) CPU.reg.d++;
+            break;
+        case 0x02: // HL
+            CPU.reg.l++;
+            if (CPU.reg.l == 0) CPU.reg.h++;
+            break;
+        case 0x03: // SP
+            CPU.reg.sp++;
+            break;
     }
-    
+
     CPU.cycles = 8;
 }
 
-// static void dec_rr(void) { CPU.cycles = 8; }      // DEC rr - DECR 16-BIT REG
+// DEC rr - DECR 16-BIT REG
 static void dec_rr(void) {
     u8 reg_pair = (CPU.opcode >> 4) & 0x03;
     
@@ -742,53 +707,38 @@ static void dec_rr(void) {
     CPU.cycles = 8;
 }
 
-// static void add_sp_d(void) { CPU.cycles = 16; }   // ADD SP,d - ADD SIGNED IMMEDIATE TO SP
+// ADD SP,d - ADD SIGNED IMMEDIATE TO SP
 static void add_sp_d(void) {
-    // READ SIGNED IMMEDIATE VALUE
-    i8 value = (i8)read_byte();
+    i8 value = (i8)read_byte();               // READ SIGNED IMMEDIATE VALUE
     u16 result = CPU.reg.sp + value;
-    
-    SET_FLAG_Z(0);
-    SET_FLAG_N(0);
-    
-    // HALF CARRY IS FROM BIT 3 FOR SP + d
-    if (value >= 0) {
-        SET_FLAG_H((CPU.reg.sp & 0x0F) + (value & 0x0F) > 0x0F);
-        SET_FLAG_C((CPU.reg.sp & 0xFF) + (value & 0xFF) > 0xFF);
-    } else {
-        SET_FLAG_H((CPU.reg.sp & 0x0F) + (value & 0x0F) < 0);
-        SET_FLAG_C((CPU.reg.sp & 0xFF) + (value & 0xFF) < 0);
-    }
-    
+
+    SET_FLAG_Z(0);                            // ZERO FLAG: ALWAYS CLEARED
+    SET_FLAG_N(0);                            // SUBTRACT FLAG: ALWAYS CLEARED
+    SET_FLAG_H((CPU.reg.sp & 0xF) + (value & 0xF) > 0xF); // HALF CARRY FROM BIT 3
+    SET_FLAG_C((CPU.reg.sp & 0xFF) + (value & 0xFF) > 0xFF); // CARRY FROM BIT 7
+
     CPU.reg.sp = result;
     CPU.cycles = 16;
 }
 
-// static void ld_hl_sp_d(void) { CPU.cycles = 12; } // LD HL,SP+d - LOAD HL WITH SP + SIGNED IMMEDIATE
+// LD HL,SP+d - LOAD HL WITH SP + SIGNED IMMEDIATE
 static void ld_hl_sp_d(void) {
-    i8 value = (i8)read_byte();
-    u16 result = CPU.reg.sp + value;
-    
-    SET_FLAG_Z(0);
-    SET_FLAG_N(0);
-    
-    // HALF CARRY IS FROM BIT 3 FOR SP + d
-    if (value >= 0) {
-        SET_FLAG_H((CPU.reg.sp & 0x0F) + (value & 0x0F) > 0x0F);
-        SET_FLAG_C((CPU.reg.sp & 0xFF) + (value & 0xFF) > 0xFF);
-    } else {
-        SET_FLAG_H((CPU.reg.sp & 0x0F) + (value & 0x0F) < 0);
-        SET_FLAG_C((CPU.reg.sp & 0xFF) + (value & 0xFF) < 0);
-    }
-    
-    CPU.reg.h = GET_HIGH_BYTE(result);
+    i8 offset = (i8)read_byte();              // READ SIGNED IMMEDIATE OFFSET
+    u16 result = CPU.reg.sp + offset;
+
+    SET_FLAG_Z(0);                            // ZERO FLAG: ALWAYS CLEARED
+    SET_FLAG_N(0);                            // SUBTRACT FLAG: ALWAYS CLEARED
+    SET_FLAG_H((CPU.reg.sp & 0xF) + (offset & 0xF) > 0xF); // HALF CARRY FROM BIT 3
+    SET_FLAG_C((CPU.reg.sp & 0xFF) + (offset & 0xFF) > 0xFF); // CARRY FROM BIT 7
+
+    CPU.reg.h = GET_HIGH_BYTE(result);        // LOAD RESULT INTO HL
     CPU.reg.l = GET_LOW_BYTE(result);
     CPU.cycles = 12;
 }
 
 // ------------------------------- ROTATES AND SHIFTS ------------------------------
 
-// static void rlca(void) { CPU.cycles = 4; }        // RLCA - ROTATE A LEFT WITH BIT 7 TO CARRY
+// RLCA - ROTATE A LEFT WITH BIT 7 TO CARRY
 static void rlca(void) {
     // SAVE BIT 7 *BEFORE* ROTATION
     u8 bit7 = (CPU.reg.a & 0x80) >> 7;
@@ -804,7 +754,7 @@ static void rlca(void) {
     CPU.cycles = 4;
 }
 
-// static void rla(void) { CPU.cycles = 4; }         // RLA - ROTATE A LEFT THROUGH CARRY
+// RLA - ROTATE A LEFT THROUGH CARRY
 static void rla(void) {
     // SAVE FLAG C AND BIT 7 *BEFORE* ROTATION
     u8 old_carry = GET_FLAG_C;
@@ -821,7 +771,7 @@ static void rla(void) {
     CPU.cycles = 4;
 }
 
-// static void rrca(void) { CPU.cycles = 4; }        // RRCA - ROTATE A RIGHT WITH BIT 0 TO CARRY
+// RRCA - ROTATE A RIGHT WITH BIT 0 TO CARRY
 static void rrca(void) {
     // SAVE BIT 0 *BEFORE* ROTATION
     u8 bit0 = CPU.reg.a & 0x01;
@@ -837,7 +787,7 @@ static void rrca(void) {
     CPU.cycles = 4;
 }
 
-// static void rra(void) { CPU.cycles = 4; }         // RRA - ROTATE A RIGHT THROUGH CARRY
+// RRA - ROTATE A RIGHT THROUGH CARRY
 static void rra(void) {
     // SAVE FLAG C AND BIT 0 *BEFORE* ROTATION
     u8 old_carry = GET_FLAG_C;
@@ -856,7 +806,7 @@ static void rra(void) {
 
 // ------------------------------ CB PREFIX OPERATIONS -----------------------------
 
-// static void rlc_r(void) { CPU.cycles = 8; }       // RLC r - ROTATE LEFT WITH COPY TO CARRY
+// RLC r - ROTATE LEFT WITH COPY TO CARRY
 static void rlc_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx); // BROKE OUT HL IF/ELSE TO HELPER FN, NEED TO REF OTHERS AS WELL
@@ -874,7 +824,7 @@ static void rlc_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void rl_r(void) { CPU.cycles = 8; }        // RL r - ROTATE LEFT THROUGH CARRY
+// RL r - ROTATE LEFT THROUGH CARRY
 static void rl_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx);
@@ -892,7 +842,7 @@ static void rl_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void rrc_r(void) { CPU.cycles = 8; }       // RRC r - ROTATE RIGHT WITH COPY TO CARRY
+// RRC r - ROTATE RIGHT WITH COPY TO CARRY
 static void rrc_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx);
@@ -909,7 +859,7 @@ static void rrc_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void rr_r(void) { CPU.cycles = 8; }        // RR r - ROTATE RIGHT THROUGH CARRY
+// RR r - ROTATE RIGHT THROUGH CARRY
 static void rr_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx);
@@ -927,7 +877,7 @@ static void rr_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void sla_r(void) { CPU.cycles = 8; }       // SLA r - SHIFT LEFT ARITHMETIC (BIT ZERO = 0)
+// SLA r - SHIFT LEFT ARITHMETIC (BIT ZERO = 0)
 static void sla_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx);
@@ -944,7 +894,7 @@ static void sla_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void sra_r(void) { CPU.cycles = 8; }       // SRA r - SHIFT RIGHT ARITHMETIC (BIT 7 UNCHANGED)
+// SRA r - SHIFT RIGHT ARITHMETIC (BIT 7 UNCHANGED)
 static void sra_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx);
@@ -962,7 +912,7 @@ static void sra_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void swap_r(void) { CPU.cycles = 8; }      // SWAP r - SWAP NIBBLES
+// SWAP r - SWAP NIBBLES
 static void swap_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx);
@@ -978,7 +928,7 @@ static void swap_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void srl_r(void) { CPU.cycles = 8; }       // SRL r - SHIFT RIGHT LOGICAL (BIT 7 = 0)
+// SRL r - SHIFT RIGHT LOGICAL (BIT 7 = 0)
 static void srl_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 value = get_reg_or_hl(reg_idx);
@@ -995,7 +945,7 @@ static void srl_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void bit_n_r(void) { CPU.cycles = 8; }     // BIT n,r - TEST BIT, SET Z FLAG IF BIT N IS 0, ELSE CLEARS
+// BIT n,r - TEST BIT, SET Z FLAG IF BIT N IS 0, ELSE CLEARS
 static void bit_n_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 bit_num = (CPU.opcode >> 3) & 0x07;
@@ -1008,7 +958,7 @@ static void bit_n_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 12 : 8;
 }
 
-// static void set_n_r(void) { CPU.cycles = 8; }     // SET n,r - SET BIT N IN REG TO 1, VAL IS LOG OR W/ 1 AT POS N
+// SET n,r - SET BIT N IN REG TO 1, VAL IS LOG OR W/ 1 AT POS N
 static void set_n_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 bit_num = (CPU.opcode >> 3) & 0x07;
@@ -1020,7 +970,7 @@ static void set_n_r(void) {
     CPU.cycles = (reg_idx == 0x06) ? 16 : 8;
 }
 
-// static void res_n_r(void) { CPU.cycles = 8; }     // RES n,r - RESET BIT AT REG TO 0, VAL IS LOG AND w/ 0 AT POS N
+// RES n,r - RESET BIT AT REG TO 0, VAL IS LOG AND w/ 0 AT POS N
 static void res_n_r(void) {
     u8 reg_idx = CPU.opcode & 0x07;
     u8 bit_num = (CPU.opcode >> 3) & 0x07;
@@ -1034,15 +984,15 @@ static void res_n_r(void) {
 
 // ----------------------------------- CPU CONTROL ---------------------------------
 
-// static void ccf(void) { CPU.cycles = 4; }         // CCF - FLIP C FLAG
+// CCF - FLIP C FLAG
 static void ccf(void) {
-    SET_FLAG_N(0);
-    SET_FLAG_H(0);
-    SET_FLAG_C(!GET_FLAG_C);
+    SET_FLAG_N(0);               // CLEAR N FLAG
+    SET_FLAG_H(0);               // CLEAR H FLAG
+    SET_FLAG_C(!GET_FLAG_C);     // TOGGLE C FLAG
     CPU.cycles = 4;
 }
 
-// static void scf(void) { CPU.cycles = 4; }         // SCF - SET C FLAG
+// SCF - SET C FLAG
 static void scf(void) {
     SET_FLAG_N(0);
     SET_FLAG_H(0);
@@ -1050,86 +1000,113 @@ static void scf(void) {
     CPU.cycles = 4;
 }
 
-// static void halt(void) { CPU.cycles = 4; }        // HALT - OBVIOUSLY HALTS THE CPU
+// HALT - LOW-POWER MODE UNTIL INTERRUPT (OR HALT BUG)
 static void halt(void) {
-    CPU.halted = 1;
+    u8 pending = get_interrupt_flags() & get_interrupt_enable();
+    if (pending != 0 && CPU.ime == 0) {
+        // HALT BUG TRIGGERS
+        CPU.halted = false;
+        CPU.halt_bug = true;
+    } else {
+        // NORMAL HALT
+        CPU.halted = true;
+    }
+
+    // 1 MACHINE CYCLE
     CPU.cycles = 4;
 }
 
-// static void stop(void) { CPU.cycles = 4; }        // STOP - "STOPS" POSSIBLY UNTIL BTN PRESS, LIKE SLEEP MODE
+// STOP - "STOPS" POSSIBLY UNTIL BTN PRESS, LIKE SLEEP MODE
 static void stop(void) {
     CPU.stopped = 1;
     CPU.cycles = 4;
 }
 
-// static void di(void) { CPU.cycles = 4; }          // DI - DISABLE INTERRUPTS
+// DI - DISABLE INTERRUPTS
 static void di(void) {
     CPU.ime = 0;  // INTERRUPT MASTER ENABLE FLAG
     CPU.cycles = 4;
 }
 
-// static void ei(void) { CPU.cycles = 4; }          // EI - ENABLE INTERRUPTS
+// EI - ENABLE INTERRUPTS
 static void ei(void) {
-    LOG_WARN(LOG_CPU, "SCHEDULING IME - INSIDE EI OPCODE\n");
     CPU.ime_scheduled = 1;
+    CPU.cycles = 4;
+}
+
+// CPL - FLIP ALL BITS OF A
+static void cpl(void) {
+    CPU.reg.a = ~CPU.reg.a;
+
+    SET_FLAG_N(1);
+    SET_FLAG_H(1);
+
     CPU.cycles = 4;
 }
 
 // -------------------------------------- JUMPS ------------------------------------
 
-// static void jp_nn(void) { CPU.cycles = 16; }      // JP nn - JUMP TO ABSOLUTE ADDRESS NN
+// JP nn - JUMP TO ABSOLUTE ADDRESS NN
 static void jp_nn(void) {
+    // GET CURRENT STATE
+    u16 old_pc = CPU.reg.pc;
+    u8 old_h = CPU.reg.h;
+    u8 old_l = CPU.reg.l;
+
+    // PERFORM JUMP
     u16 addr = read_word();
     CPU.reg.pc = addr;
     CPU.cycles = 16;
 }
 
-// static void jp_cc_nn(void) { CPU.cycles = 12; }   // JP cc,nn - CONDITIONAL JUMP TO ABSOLUTE ADDRESS NN
+// JP cc,nn - CONDITIONAL JUMP TO ABSOLUTE ADDRESS NN
 static void jp_cc_nn(void) {
     u8 condition = (CPU.opcode >> 3) & 0x03;
-    u16 addr = read_word();
-    bool jump = false;
+    bool jump;
 
-    switch(condition) { // TODO: REPLACE WITH HASH MAP, SWITCHES AND IFS ARE FOR THE WEAK
+    switch (condition) {
         case 0: jump = !GET_FLAG_Z; break;    // NZ
         case 1: jump = GET_FLAG_Z;  break;    // Z
         case 2: jump = !GET_FLAG_C; break;    // NC
         case 3: jump = GET_FLAG_C;  break;    // C
     }
 
+    u16 addr = read_word();
+
     if (jump) {
         CPU.reg.pc = addr;
-        CPU.cycles = 16;
+        CPU.cycles = 16;    // SUCCESSFUL JUMP
     } else {
-        CPU.cycles = 12;
+        CPU.cycles = 12;    // NO JUMP
     }
 }
 
-// static void jp_hl(void) { CPU.cycles = 4; }       // JP (HL) - JUMP TO HL
+// JP (HL) - JUMP TO HL
 static void jp_hl(void) {
     CPU.reg.pc = MAKE_WORD(CPU.reg.h, CPU.reg.l);
     CPU.cycles = 4;
 }
 
-// static void jr_n(void) { CPU.cycles = 12; }       // JR n - RELATIVE JUMP BY SIGNED IMMEDIATE N
+// JR n - RELATIVE JUMP BY SIGNED IMMEDIATE N
 static void jr_n(void) {
     i8 offset = (i8)read_byte();
     CPU.reg.pc += offset;
     CPU.cycles = 12;
 }
 
-// static void jr_cc_n(void) { CPU.cycles = 8; }     // JR cc,n - CONDITIONAL RELATIVE JUMP BY SIGNED IMMEDIATE N
+// JR cc,n - CONDITIONAL RELATIVE JUMP BY SIGNED IMMEDIATE N
 static void jr_cc_n(void) {
     u8 condition = (CPU.opcode >> 3) & 0x03;
-    i8 offset = (i8)read_byte();
-    bool jump = false;
+    bool jump;
 
-    switch(condition) { // TODO: REPLACE WITH HASH MAP, SWITCHES AND IFS ARE FOR THE WEAK
+    switch (condition) {
         case 0: jump = !GET_FLAG_Z; break;    // NZ
         case 1: jump = GET_FLAG_Z;  break;    // Z
         case 2: jump = !GET_FLAG_C; break;    // NC
         case 3: jump = GET_FLAG_C;  break;    // C
     }
+
+    i8 offset = (i8)read_byte();
 
     if (jump) {
         CPU.reg.pc += offset;
@@ -1141,7 +1118,7 @@ static void jr_cc_n(void) {
 
 // -------------------------------------- CALLS ------------------------------------
 
-// static void call_nn(void) { CPU.cycles = 24; }    // CALL nn - CALL ABSOLUTE ADDRESS NN
+// CALL nn - CALL ABSOLUTE ADDRESS NN
 static void call_nn(void) {
     u16 addr = read_word();
     
@@ -1156,20 +1133,21 @@ static void call_nn(void) {
     CPU.cycles = 24;
 }
 
-// static void call_cc_nn(void) { CPU.cycles = 12; } // CALL cc,nn - CONDITIONAL CALL TO ABSOLUTE ADDRESS NN
+// CALL cc,nn - CONDITIONAL CALL TO ABSOLUTE ADDRESS NN
 static void call_cc_nn(void) {
-    u8 condition = (CPU.opcode >> 3) & 0x03;
-    u16 addr = read_word();
-    bool jump = false;
-    
-    switch(condition) {
-        case 0: jump = !GET_FLAG_Z; break;    // NZ
-        case 1: jump = GET_FLAG_Z;  break;    // Z
-        case 2: jump = !GET_FLAG_C; break;    // NC
-        case 3: jump = GET_FLAG_C;  break;    // C
+    u8 condition = (CPU.opcode >> 3) & 0x03; // EXTRACT CONDITION BITS
+    u16 addr = read_word(); // FETCH ABSOLUTE ADDRESS NN
+    bool jump;
+
+    // CHECK CONDITIONS
+    switch (condition) {
+        case 0: jump = !GET_FLAG_Z; break;
+        case 1: jump = GET_FLAG_Z;  break;
+        case 2: jump = !GET_FLAG_C; break;
+        case 3: jump = GET_FLAG_C;  break;
     }
-    
-    if (jump) { // ONLY PUSH CURRENT PC ONTO STACK IF JUMP
+
+    if (jump) {
         CPU.reg.sp--;
         write_to_bus(CPU.reg.sp, GET_HIGH_BYTE(CPU.reg.pc));
         CPU.reg.sp--;
@@ -1185,7 +1163,7 @@ static void call_cc_nn(void) {
 
 // ------------------------------------ RESTARTS -----------------------------------
 
-// static void rst_n(void) { CPU.cycles = 16; }      // RST n - RESTART, CALL TO FIXED ADDRESS
+// RST n - RESTART, CALL TO FIXED ADDRESS
 static void rst_n(void) {
     // RST'S ARE AT FIXED ADDR
     static const u16 RST_VECTORS[] = {
@@ -1202,9 +1180,6 @@ static void rst_n(void) {
     // INDEX FROM OPCODE
     u8 vector_idx = ((CPU.opcode & 0x38) >> 3);
     u16 target_addr = RST_VECTORS[vector_idx];
-
-    LOG_TRACE(LOG_CPU, "RST DEBUG: opcode=0x%02X, mask=0x%02X, idx=%d, addr=0x%04X\n",
-           CPU.opcode, (CPU.opcode & 0x38), vector_idx, target_addr);
     
     // PUSH CURRENT PC ONTO STACK
     CPU.reg.sp--;
@@ -1214,64 +1189,84 @@ static void rst_n(void) {
     
     CPU.reg.pc = target_addr;
     CPU.cycles = 16;
-
-    LOG_TRACE(LOG_CPU, "RST: PC was 0x%04X, now 0x%04X\n", CPU.reg.pc - 1, CPU.reg.pc);
 }
 
 // ------------------------------------ RETURNS ------------------------------------
 
-// static void ret(void) { CPU.cycles = 16; }        // RET - LETS US USE SUBROUTINES AND GO BACK TO CALLER
+// RET - LETS US USE SUBROUTINES AND GO BACK TO CALLER
 static void ret(void) {
-   // POP ADDRESS FROM STACK
-   u8 low = read_from_bus(CPU.reg.sp);
-   CPU.reg.sp++;
-   u8 high = read_from_bus(CPU.reg.sp);
-   CPU.reg.sp++;
-   
-   // JUMP TO POPPED ADDRESS
-   CPU.reg.pc = MAKE_WORD(high, low);
-   CPU.cycles = 16;
+    // POP ADDRESS FROM STACK
+    u8 low = read_from_bus(CPU.reg.sp++);
+    u8 high = read_from_bus(CPU.reg.sp++);
+
+    // JUMP TO POPPED ADDRESS
+    CPU.reg.pc = MAKE_WORD(high, low);
+    CPU.cycles = 16;
 }
 
-// static void ret_cc(void) { CPU.cycles = 8; }      // RET cc - CONDITIONAL RETURN FROM SUBROUTINE
+// RET cc - CONDITIONAL RETURN FROM SUBROUTINE
 static void ret_cc(void) {
-   u8 condition = (CPU.opcode >> 3) & 0x03;
-   bool do_ret = false;
-   
-   switch(condition) {
-       case 0: do_ret = !GET_FLAG_Z; break;    // NZ
-       case 1: do_ret = GET_FLAG_Z;  break;    // Z
-       case 2: do_ret = !GET_FLAG_C; break;    // NC
-       case 3: do_ret = GET_FLAG_C;  break;    // C
-   }
-   
-   if (do_ret) {
-       // POP ADDRESS FROM STACK
-       u8 low = read_from_bus(CPU.reg.sp);
-       CPU.reg.sp++;
-       u8 high = read_from_bus(CPU.reg.sp);
-       CPU.reg.sp++;
-       
-       // JUMP TO POPPED ADDRESS
-       CPU.reg.pc = MAKE_WORD(high, low);
-       CPU.cycles = 20;
-   } else {
-       CPU.cycles = 8;
-   }
+    u8 condition = (CPU.opcode >> 3) & 0x03;
+    bool do_ret;
+
+    switch (condition) {
+        case 0: do_ret = !GET_FLAG_Z; break; // NZ
+        case 1: do_ret = GET_FLAG_Z;  break; // Z
+        case 2: do_ret = !GET_FLAG_C; break; // NC
+        case 3: do_ret = GET_FLAG_C;  break; // C
+    }
+
+    if (do_ret) {
+        // POP ADDRESS FROM STACK
+        u8 low = read_from_bus(CPU.reg.sp++);
+        u8 high = read_from_bus(CPU.reg.sp++);
+
+        // JUMP TO POPPED ADDRESS
+        CPU.reg.pc = MAKE_WORD(high, low);
+        CPU.cycles = 20;
+    } else {
+        CPU.cycles = 8;
+    }
 }
 
-// static void reti(void) { CPU.cycles = 16; }       // RETI - RETURN FROM INTERUPT, DO WE REENABLE IME FLAG?
+// RETI - RETURN FROM INTERUPT, DO WE REENABLE IME FLAG?
 static void reti(void) {
-   // POP ADDRESS FROM STACK
-   u8 low = read_from_bus(CPU.reg.sp);
-   CPU.reg.sp++;
-   u8 high = read_from_bus(CPU.reg.sp);
-   CPU.reg.sp++;
-   
-   // JUMP TO POPPED ADDRESS AND ENABLE INTERRUPTS
-   CPU.reg.pc = MAKE_WORD(high, low);
-   CPU.ime = 1; // GOING TO RE-ENABLE FOR NOW, MIGHT NEED TO DISABLE
-   CPU.cycles = 16;
+    // POP ADDRESS FROM STACK
+    u8 low = read_from_bus(CPU.reg.sp++);
+    u8 high = read_from_bus(CPU.reg.sp++);
+
+    // JUMP TO POPPED ADDRESS
+    CPU.reg.pc = MAKE_WORD(high, low);
+    CPU.ime = 1;
+    CPU.cycles = 16;
+}
+
+// DAA
+void daa() {
+    uint8_t adjust = 0;
+    bool carry_out = false;
+    if (GET_FLAG_N) {
+        if (GET_FLAG_H) {
+            adjust |= 0x06;
+        }
+        if (GET_FLAG_C) {
+            adjust |= 0x60;
+        }
+        CPU.reg.a -= adjust;
+    } else {
+        if (GET_FLAG_H || (CPU.reg.a & 0x0F) > 0x09) {
+            adjust |= 0x06;
+        }
+        if (GET_FLAG_C || CPU.reg.a > 0x99) {
+            adjust |= 0x60;
+            carry_out = true;
+        }
+        CPU.reg.a += adjust;
+    }
+
+    SET_FLAG_H(false);
+    SET_FLAG_Z(CPU.reg.a == 0);
+    SET_FLAG_C(carry_out);
 }
 
 // TABLE INITIALIZATION ------------------------------------------------------------
@@ -1391,6 +1386,7 @@ static void init_tables(void) {
     opcode_table[0xFB] = ei;          // EI
     opcode_table[0x37] = scf;         // SCF
     opcode_table[0x3F] = ccf;         // CCF
+    opcode_table[0x2F] = cpl;         // CPL
 
     // JUMPS AND CALLS
     opcode_table[0xC3] = jp_nn;       // JP nn
@@ -1423,6 +1419,7 @@ static void init_tables(void) {
     opcode_table[0xEF] = rst_n;       // RST 28H
     opcode_table[0xF7] = rst_n;       // RST 30H
     opcode_table[0xFF] = rst_n;       // RST 38H
+    opcode_table[0x27] = daa;         // DAA
 
     // CB PREFIX OPERATIONS
     for (int i = 0x00; i <= 0x07; i++) cb_opcode_table[i] = rlc_r;        // RLC r
@@ -1442,49 +1439,77 @@ static void init_tables(void) {
 void cpu_init(void) {
     init_tables();
 
-    CPU.reg.pc = 0x0000;
-    CPU.reg.sp = 0xFFFE;
-    
-    // Default register values
-    CPU.reg.a = 0x01;
-    CPU.reg.f = 0xB0;
-    CPU.reg.b = 0x00;
-    CPU.reg.c = 0x13;
-    CPU.reg.d = 0x00;
-    CPU.reg.e = 0xD8;
-    CPU.reg.h = 0x01;
-    CPU.reg.l = 0x4D;
+    if (get_bootrom_enable()) {
+        LOG_INFO(LOG_CPU, "ALLOWING BOOTROM TO INITIALIZE CPU VALUES\n");
+        CPU.reg.pc = 0x0000;
+        CPU.reg.sp = 0x0000;
+        CPU.reg.a = 0x00;
+        CPU.reg.f = 0x00;
+        CPU.reg.b = 0x00;
+        CPU.reg.c = 0x00;
+        CPU.reg.d = 0x00;
+        CPU.reg.e = 0x00;
+        CPU.reg.h = 0x00;
+        CPU.reg.l = 0x00;
+        CPU.ime = 0;  // INTERRUPTS START DISABLED
+    } else {
+        LOG_INFO(LOG_CPU, "INITIALIZING CPU WITH POST-BOOT VALUES\n");
+        CPU.reg.pc = 0x0100;
+        CPU.reg.sp = 0xFFFE;
+        CPU.reg.a = 0x01;
+        CPU.reg.f = 0xB0;
+        CPU.reg.b = 0x00;
+        CPU.reg.c = 0x13;
+        CPU.reg.d = 0x00;
+        CPU.reg.e = 0xD8;
+        CPU.reg.h = 0x01;
+        CPU.reg.l = 0x4D;
+        CPU.ime = 1;
+    }
 
-    CPU.ime = 1;
     CPU.ime_scheduled = 0;
     CPU.halted = false;
     CPU.stopped = false;
-
     CPU.opcode = 0;
     CPU.cycles = 0;
 }
 
 void cpu_step(void) {
-    if (CPU.halted) return;
+    if (CPU.halted) {
+        return;
+    }
+
+    #ifdef DEBUG
+    // FOR PARSED TEST LOGS
+    u8 mem[4];
+    for(int i = 0; i < 4; i++) {
+        mem[i] = read_from_bus(CPU.reg.pc + i);
+    }
+    LOG_TEST("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X",
+        CPU.reg.a,
+        CPU.reg.f,
+        CPU.reg.b,
+        CPU.reg.c,
+        CPU.reg.d,
+        CPU.reg.e,
+        CPU.reg.h,
+        CPU.reg.l,
+        CPU.reg.sp,
+        CPU.reg.pc,
+        mem[0], mem[1], mem[2], mem[3]
+    );
+    #endif
 
     // SET FLAG FOR IME SCHEDULER
     bool was_scheduled = CPU.ime_scheduled;
 
-    // GET + STORE INITIAL PC FOR DEBUG
-    u16 initial_pc = CPU.reg.pc;
-    
-    LOG_TRACE(LOG_CPU, "--- NEW CPU CYCLE ---");
-    LOG_TRACE(LOG_CPU, "ATTEMPTING TO READ FROM PC: 0x%04X\n", CPU.reg.pc);
-
     // GET CURRENT OPCODE
-    CPU.opcode = read_from_bus(CPU.reg.pc++);
-
-    LOG_DEBUG(LOG_CPU, "READ COMPLETE - OPCODE: 0x%02X, NEW PC: 0x%04X\n", CPU.opcode, CPU.reg.pc);
-    LOG_TRACE(LOG_CPU, "IME=%d IME_SCHEDULED=%d SP=0x%04X CYCLES=%u",
-        CPU.ime, CPU.ime_scheduled, CPU.reg.sp, CPU.cycles);
-    LOG_TRACE(LOG_CPU, "REGS: A=0x%02X F=0x%02X B=0x%02X C=0x%02X D=0x%02X E=0x%02X H=0x%02X L=0x%02X",
-        CPU.reg.a, CPU.reg.f, CPU.reg.b, CPU.reg.c, CPU.reg.d, CPU.reg.e, CPU.reg.h, CPU.reg.l);
-    LOG_TRACE(LOG_CPU, "EXECUTING OPCODE 0x%02X at PC 0x%04X\n", CPU.opcode, initial_pc);
+    if (CPU.halt_bug) {
+        CPU.halt_bug = false;
+        CPU.opcode = read_from_bus(CPU.reg.pc); // DONT INCR FOR HALT BUG
+    } else {
+        CPU.opcode = read_from_bus(CPU.reg.pc++);
+    }
 
     // EXECUTE NEXT INSTRUCTION
     if (CPU.opcode == 0xCB) {
@@ -1493,23 +1518,11 @@ void cpu_step(void) {
     } else {
         opcode_table[CPU.opcode]();
     }
-    LOG_TRACE(LOG_CPU, "EXECUTION COMPLETE - PC NOW AT: 0x%04X\n", CPU.reg.pc);
 
     if (was_scheduled) {
-        LOG_WARN(LOG_CPU, "ENABLING IME (WAS SCHEDULED FROM PREVIOUS INSTRUCTION)\n");
         CPU.ime = 1;
         CPU.ime_scheduled = 0;
     }
-
-    LOG_TRACE(LOG_CPU, "\nAFTER OP:\n");  
-    LOG_TRACE(LOG_CPU, "IME FLAG: %i, IME-SCHEDULED: %i\n", CPU.ime, CPU.ime_scheduled);
-    LOG_TRACE(LOG_CPU, "PC: 0x%04X  SP: 0x%04X  Cycles: %u\n", 
-           CPU.reg.pc, CPU.reg.sp, CPU.cycles);
-    LOG_TRACE(LOG_CPU, "A: 0x%02X  F: 0x%02X\n", CPU.reg.a, CPU.reg.f);
-    LOG_TRACE(LOG_CPU, "B: 0x%02X  C: 0x%02X\n", CPU.reg.b, CPU.reg.c);
-    LOG_TRACE(LOG_CPU, "D: 0x%02X  E: 0x%02X\n", CPU.reg.d, CPU.reg.e);
-    LOG_TRACE(LOG_CPU, "H: 0x%02X  L: 0x%02X\n", CPU.reg.h, CPU.reg.l);
-    LOG_TRACE(LOG_CPU, "--- END CPU CYCLE ---");
 }
 
 // CYCLE MANAGEMENT

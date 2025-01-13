@@ -42,7 +42,7 @@ SANITIZE_FLAGS := -fsanitize=address -fsanitize=undefined
 # TARGETS
 .PHONY: all clean debug release sanitize dirs
 
-all: release
+all: clean release
 
 debug: CFLAGS = $(BASE_CFLAGS) $(DEBUG_FLAGS)
 debug: dirs $(BIN_DIR)/$(TARGET)

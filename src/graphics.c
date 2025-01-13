@@ -13,6 +13,14 @@ static const u32 DEFAULT_COLORS[4] = {
     0xFF000000   // BLACK (11)
 };
 
+// REEEETRRROOOOO - UNCOMMENT AND COMMENT OUT THE ABOVE
+// static const u32 DEFAULT_COLORS[4] = {
+//     0xFF9BBC0F,  // LIGHTEST GREEN
+//     0xFF8BAC0F,  // LIGHT GREEN  
+//     0xFF306230,  // DARK GREEN
+//     0xFF0F380F   // DARKEST GREEN 
+// };
+
 static void update_palette(u8* palette_reg, u32* colors, u8 val) {
     *palette_reg = val;
     // GET 2 BIT COLOR VAL AND MAP TO CORRECT SHADE    BITS
@@ -84,7 +92,7 @@ static void render_background_line() {
 
             // HANDLE SIGNED ADDRESSING IF NEEDED
             if (is_signed_addressing) {
-                tile_idx = ((i8)tile_idx + 128);
+                tile_idx = ((i8)tile_idx + 128) & 0xFF;
             }
 
             // CALCULATE PIXEL ADDRESS AND FETCH BYTES
@@ -179,8 +187,13 @@ static void render_sprites_line() {
         // CALCULATE SPRITE Y-POSITION ON SCREEN
         const int sprite_y = graphics.oam[i].y - 16;
 
-        // CHECK IF SPRITE IS VISIBLE ON THE CURRENT LINE
-        if (graphics.line >= sprite_y && graphics.line < sprite_y + sprite_height) {
+        // CHECK IF SPRITE IS VISIBLE ON THE CURRENT LINE + X BOUNDS
+        if (graphics.line >= sprite_y && 
+            graphics.line < sprite_y + sprite_height &&
+            graphics.oam[i].x > 0 && 
+            graphics.oam[i].x < SCREEN_WIDTH + 8) {
+            
+            // STORE SPRITE IF VISIBLE
             temp_sprites[sprite_count++] = graphics.oam[i];
         }
     }
@@ -236,12 +249,9 @@ static void render_sprites_line() {
             // SKIP PIXELS OUTSIDE OF SCREEN BOUNDS
             if (screen_x < 0 || screen_x >= SCREEN_WIDTH) continue;
 
-            // CALCULATE X-FLIPPED PIXEL POSITION
-            const u8 x_flip = (s->flags & 0x20) ? (7 - px) : px;
-
-            // DETERMINE COLOR INDEX FROM TILE DATA
-            const u8 bit_pos = 7 - x_flip;
-            const u8 color_idx = ((high_byte >> bit_pos) & 1) << 1 | ((low_byte >> bit_pos) & 1);
+            // DETERMINE X-FLIP + COLOR INDEX FROM TILE DATA
+            const u8 bit_pos = (s->flags & 0x20) ? px : (7 - px);
+            const u8 color_idx = (((high_byte >> bit_pos) & 1) << 1) | ((low_byte >> bit_pos) & 1);
 
             // SKIP TRANSPARENT PIXELS (COLOR INDEX 0)
             if (color_idx == 0) continue;
@@ -249,8 +259,12 @@ static void render_sprites_line() {
             // CALCULATE FRAME BUFFER INDEX
             const int fb_index = (graphics.line * SCREEN_WIDTH) + screen_x;
 
+            // PRIORITY CHECK HANDLING
+            const bool bg_priority = (s->flags & 0x80) != 0;
+            const u32 current_color = graphics.frame_buffer[fb_index];
+
             // DRAW PIXEL IF IT PASSES PRIORITY CHECK
-            if (!(s->flags & 0x80) || graphics.frame_buffer[fb_index] == graphics.bg_colors[0]) {
+            if (!bg_priority || current_color == graphics.bg_colors[0]) {
                 graphics.frame_buffer[fb_index] = graphics.sprite_colors[palette][color_idx];
             }
         }
@@ -259,8 +273,14 @@ static void render_sprites_line() {
 
 // RENDER A SINGLE SCANLINE
 void render_line() {
-    // EXIT EARLY IF LCD IS DISABLED
-    if (!(graphics.lcdc & LCDC_ENABLE)) return;
+    // EXIT EARLY IF LCD IS DISABLED OR LINE IS INVALID
+    if (!(graphics.lcdc & LCDC_ENABLE)) {
+        const int fb_start = graphics.line * SCREEN_WIDTH;
+        memset(&graphics.frame_buffer[fb_start], 0xFF, SCREEN_WIDTH * sizeof(u32));
+        return;
+    }
+    
+    if (graphics.line >= SCREEN_HEIGHT) return;
 
     // CLEAR THE CURRENT LINE TO BACKGROUND COLOR 0
     const u32 bg_color0 = graphics.bg_colors[0];
@@ -315,13 +335,12 @@ void graphics_init() {
     }
 
     // INIT MEMORY DEFAULTS 
+    memset(&graphics, 0, sizeof(graphics_system));
     memset(graphics.vram, 0, VRAM_BANK_SIZE);
+    memset(graphics.oam, 0, sizeof(graphics.oam));
     memset(graphics.frame_buffer, 0xFF, sizeof(graphics.frame_buffer));
 
-    // BOOT VALUES FOR LCD REGISTERS
-    graphics.lcd_enabled = false;       // LCD STARTS DISABLED
-    graphics.lcdc = 0x00;               // EVERYTHING DISABLED
-    graphics.stat = 0x00;               // NO FLAGS
+    // COMMON INITS FIRST
     graphics.line = 0;
     graphics.mode = MODE_HBLANK;
     graphics.mode_clock = 0;
@@ -330,16 +349,31 @@ void graphics_init() {
     graphics.ly = 0x00;
     graphics.lyc = 0x00;
     graphics.dma = 0x00;
-    graphics.bgp = 0xFC;                // DEFAULT PALETTE
-    graphics.obp0 = 0x00;
-    graphics.obp1 = 0x00;
     graphics.wy = 0x00;
     graphics.wx = 0x00;
+    graphics.window_line = 0;
 
-    // INITIALIZE PALETTES BEFORE WINDOW CREATION
+    if (get_bootrom_enable()) {
+        // BOOTROM START VALUES
+        graphics.lcdc = 0x00;
+        graphics.stat = 0x00;
+        graphics.bgp = 0x00;
+        graphics.obp0 = 0x00;
+        graphics.obp1 = 0x00;
+    } else {
+        // POST-BOOT VALUES 
+        graphics.lcdc = 0x91;
+        graphics.stat = 0x85;
+        graphics.bgp = 0xFC;
+        graphics.obp0 = 0xFF; 
+        graphics.obp1 = 0xFF;
+    }
+
+    // INIT PALETTES
     update_palette(&graphics.bgp, graphics.bg_colors, graphics.bgp);
     update_palette(&graphics.obp0, graphics.sprite_colors[0], graphics.obp0);
     update_palette(&graphics.obp1, graphics.sprite_colors[1], graphics.obp1);
+
 
     // MAIN WINDOW SETUP
     int scale = 3;
@@ -443,65 +477,88 @@ void graphics_init() {
 
 void graphics_tick() {
     if (!(graphics.lcdc & LCDC_ENABLE)) {
-        graphics.mode_clock = 0;
+        // FILL FRAME BUFFER WITH WHITE IF WE HAVEN'T ALREADY
+        static bool cleared = false;
+        if (!cleared) {
+            memset(graphics.frame_buffer, 0xFF, sizeof(graphics.frame_buffer));
+            cleared = true;
+        }
+        // RESET PPU STATE
         graphics.line = 0;
         graphics.ly = 0;
+        graphics.mode = MODE_HBLANK;
         graphics.stat &= ~0x03;
+        graphics.mode_clock = 0;
         return;
     }
 
+    // ADD 4 T-CYCLES
     graphics.mode_clock += 4;
 
-    switch (graphics.mode) {
-        case MODE_OAM:  // 80 CYCLES
-            if (graphics.mode_clock >= 80) {
-                graphics.mode_clock = 0;
-                graphics.mode = MODE_DRAWING;
-                graphics.stat = (graphics.stat & ~0x03) | MODE_DRAWING;
+    // LYC=LY CHECK
+    if (graphics.ly == graphics.lyc) {
+        graphics.stat |= 0x04;
+        if (graphics.stat & 0x40) interrupt_req(INT_LCD);
+    } else {
+        graphics.stat &= ~0x04;
+    }
+
+    // VBLANK HANDLING
+    if (graphics.mode == MODE_VBLANK) {
+        if (graphics.mode_clock >= 456) {
+            graphics.mode_clock = 0;
+            graphics.line++;
+            graphics.ly = graphics.line;
+
+            // END OF VBLANK
+            if (graphics.line > 153) {
+                graphics.mode = MODE_OAM;
+                graphics.line = 0;
+                graphics.ly = 0;
+                graphics.window_line = 0;
+                graphics.stat = (graphics.stat & ~0x03) | MODE_OAM;
             }
-            break;
+        }
+        return;
+    }
 
-        case MODE_DRAWING:  // 172 CYCLES
-            if (graphics.mode_clock >= 172) {
-                graphics.mode_clock = 0;
-                graphics.mode = MODE_HBLANK;
-                graphics.stat = (graphics.stat & ~0x03) | MODE_HBLANK;
-                render_line();
-            }
-            break;
+    // MODE TRANSITIONS
+    const u16 OAM_END = 80;
+    const u16 PIXEL_END = 80 + 168;
+    const u16 LINE_END = 456;
 
-        case MODE_HBLANK:  // 204 CYCLES TO COMPLETE 456 CYCLE LINE
-            if (graphics.mode_clock >= 204) {
-                graphics.mode_clock = 0;
-                graphics.line++;
-                graphics.ly = graphics.line;
+    if (graphics.mode_clock < OAM_END) {
+        if (graphics.mode != MODE_OAM) {
+            graphics.mode = MODE_OAM;
+            graphics.stat = (graphics.stat & ~0x03) | MODE_OAM;
+        }
+    }
+    else if (graphics.mode_clock < PIXEL_END) {
+        if (graphics.mode != MODE_DRAWING) {
+            graphics.mode = MODE_DRAWING;
+            graphics.stat = (graphics.stat & ~0x03) | MODE_DRAWING;
+        }
+    }
+    else if (graphics.mode_clock < LINE_END) {
+        if (graphics.mode != MODE_HBLANK) {
+            graphics.mode = MODE_HBLANK;
+            graphics.stat = (graphics.stat & ~0x03) | MODE_HBLANK;
+            render_line();
+            if (graphics.stat & 0x08) interrupt_req(INT_LCD);
+        }
+    }
+    else {
+        graphics.mode_clock = 0;
+        graphics.line++;
+        graphics.ly = graphics.line;
 
-                if (graphics.line == 144) {
-                    graphics.mode = MODE_VBLANK;
-                    graphics.stat = (graphics.stat & ~0x03) | MODE_VBLANK;
-                    interrupt_req(INT_VBLANK);  // REQUEST ONCE ON ENTERING VBLANK
-                    draw_frame();
-                } else {
-                    graphics.mode = MODE_OAM;
-                    graphics.stat = (graphics.stat & ~0x03) | MODE_OAM;
-                }
-            }
-            break;
-
-        case MODE_VBLANK:  // 456 CYCLES PER LINE, 10 LINES
-            if (graphics.mode_clock >= 456) {
-                graphics.mode_clock = 0;
-                graphics.line++;
-                graphics.ly = graphics.line;
-
-                if (graphics.line > 153) {  // END OF VBLANK
-                    graphics.mode = MODE_OAM;
-                    graphics.line = 0;
-                    graphics.ly = 0;
-                    graphics.stat = (graphics.stat & ~0x03) | MODE_OAM;
-                }
-            }
-            break;
+        if (graphics.line == 144) {
+            graphics.mode = MODE_VBLANK;
+            graphics.stat = (graphics.stat & ~0x03) | MODE_VBLANK;
+            interrupt_req(INT_VBLANK);
+            if (graphics.stat & 0x10) interrupt_req(INT_LCD);
+            draw_frame();
+        }
     }
 }
 
@@ -535,88 +592,109 @@ void handle_events() {
 
 // MEMORY ACCESS
 u8 vram_read(u16 addr) {
-    if (graphics.mode == MODE_DRAWING) return 0xFF;
     return graphics.vram[addr - VRAM_START];
 }
 
 void vram_write(u16 addr, u8 val) {
-    if (graphics.mode == MODE_DRAWING) return;
     graphics.vram[addr - VRAM_START] = val;
 }
 
 u8 oam_read(u16 addr) {
-    if (graphics.mode == MODE_DRAWING || graphics.mode == MODE_OAM) return 0xFF;
     return ((u8*)graphics.oam)[addr - OAM_START];
 }
 
 void oam_write(u16 addr, u8 val) {
-    if (graphics.mode == MODE_DRAWING || graphics.mode == MODE_OAM) return;
+    // DITTO, NO BLOCKING
     ((u8*)graphics.oam)[addr - OAM_START] = val;
 }
 
 u8 lcd_read(u16 addr) {
-    switch (addr - IO_START) {
-        case IO_LCDC: return graphics.lcdc;
-        case IO_STAT: return graphics.stat;
-        case IO_SCY: return graphics.scy;
-        case IO_SCX: return graphics.scx;
-        case IO_LY: return graphics.line;
-        case IO_LYC: return graphics.lyc;
-        case IO_DMA: return graphics.dma;
-        case IO_BGP: return graphics.bgp;
-        case IO_OBP0: return graphics.obp0;
-        case IO_OBP1: return graphics.obp1;
-        case IO_WY: return graphics.wy;
-        case IO_WX: return graphics.wx;
-        default:     return 0xFF;
-    }
+   switch (addr - IO_START) {
+       case IO_LCDC: return graphics.lcdc;
+       case IO_STAT: return graphics.stat | 0x80;  // BIT 7 ALWAYS SET
+       case IO_SCY: return graphics.scy;
+       case IO_SCX: return graphics.scx;
+       case IO_LY: return graphics.ly; // SET 0x90 FOR TESTS (OFF-BY-TWO ERR IS BULLSHIT)
+       case IO_LYC: return graphics.lyc;
+       case IO_DMA: return graphics.dma;
+       case IO_BGP: return graphics.bgp;
+       case IO_OBP0: return graphics.obp0;
+       case IO_OBP1: return graphics.obp1;
+       case IO_WY: return graphics.wy;
+       case IO_WX: return graphics.wx;
+       default: return 0xFF;
+   }
 }
 
 void lcd_write(u16 addr, u8 val) {
     switch (addr - IO_START) {
-        case IO_LCDC: // LCDC
+        case IO_LCDC: {
             graphics.lcdc = val;
-            graphics.lcd_enabled = (val & LCDC_ENABLE);
-            if (!graphics.lcd_enabled) {
+            if (!(val & LCDC_ENABLE)) {
                 graphics.line = 0;
+                graphics.ly = 0;
                 graphics.mode = MODE_HBLANK;
                 graphics.mode_clock = 0;
+                graphics.stat &= ~0x03;
+                memset(graphics.frame_buffer, 0xFF, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
             }
             break;
-        case IO_STAT: // STAT
+        }
+
+        case IO_STAT:
+            // KEEP MODE FLAGS, LY=LYC BIT, ONLY ALLOW WRITES TO INTERRUPT ENABLE BITS
             graphics.stat = (graphics.stat & 0x07) | (val & 0x78);
             break;
-        case IO_SCY: // SCY - SCROLL Y
+
+        case IO_SCY:
             graphics.scy = val;
             LOG_DEBUG(LOG_GRAPHICS, "SCY SET TO 0x%02X\n", val);
             break;
-        case IO_SCX: // SCX - SCROLL X
+
+        case IO_SCX:
             graphics.scx = val;
             LOG_DEBUG(LOG_GRAPHICS, "SCX SET TO 0x%02X\n", val);
             break;
-        case IO_LY: // LY (READ-ONLY)
+
+        case IO_LY:
+            // READ ONLY
             break;
-        case IO_LYC: // LYC
+
+        case IO_LYC:
             graphics.lyc = val;
+            if (graphics.ly == graphics.lyc) {
+                graphics.stat |= 0x04;
+                if (graphics.stat & 0x40) {
+                    interrupt_req(INT_LCD);
+                }
+            } else {
+                graphics.stat &= ~0x04;
+            }
             LOG_DEBUG(LOG_GRAPHICS, "LYC SET TO 0x%02X\n", val);
             break;
-        case IO_DMA: // DMA
+
+        case IO_DMA:
             graphics.dma = val;
-            dma_start(val);  // START CYCLE-BASED DMA, NO BLOCK COPY
+            dma_start(val);
             break;
-        case IO_BGP: // BGP
+
+        case IO_BGP:
             update_palette(&graphics.bgp, graphics.bg_colors, val);
             break;
-        case IO_OBP0: // OBP0
+
+        case IO_OBP0:
             update_palette(&graphics.obp0, graphics.sprite_colors[0], val);
             break;
-        case IO_OBP1: // OBP1
+
+        case IO_OBP1:
             update_palette(&graphics.obp1, graphics.sprite_colors[1], val);
             break;
-        case IO_WY: // WY
+
+        case IO_WY:
             graphics.wy = val;
             break;
-        case IO_WX: // WX
+
+        case IO_WX:
             graphics.wx = val;
             break;
     }
