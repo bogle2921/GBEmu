@@ -13,11 +13,13 @@ typedef enum {
     LOG_DMA,
     LOG_TIMER,
     LOG_INTERRUPT,
+    LOG_TESTS,
     LOG_COUNT
 } LogComponent;
 
 // LOG LEVELS, SHOULD MOSTLY USE TRACE
 typedef enum {
+    LOG_TEST,
     LOG_ERROR,
     LOG_WARN,
     LOG_INFO,
@@ -35,6 +37,7 @@ void logger_cleanup(void);
 #define LOG_INFO(component, ...)  log_message(component, LOG_INFO, __VA_ARGS__)
 #define LOG_DEBUG(component, ...) log_message(component, LOG_DEBUG, __VA_ARGS__)
 #define LOG_TRACE(component, ...) log_message(component, LOG_TRACE, __VA_ARGS__)
+#define LOG_TEST(...) log_message(LOG_TESTS, LOG_TEST, __VA_ARGS__)
 
 // DONT USE THIS
 void log_message(LogComponent component, LogLevel level, const char* fmt, ...);

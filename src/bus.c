@@ -27,6 +27,7 @@ static struct {
 } bus = {0};
 
 void init_bus() {
+    memset(&bus, 0, sizeof(bus));
     memset(&bus.wram, 0, sizeof(bus.wram));
     memset(&bus.hram, 0, sizeof(bus.hram));
     memset(&bus.io, 0, sizeof(bus.io));

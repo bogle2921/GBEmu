@@ -21,7 +21,11 @@ static bool get_timer_bit(void) {
 }
 
 void timer_init(void) {
-    timer.div = 0xABCC; // POWER-ON DEFAULT
+    if (get_bootrom_enable()) {
+        timer.div = 0x00;    // START AT 0 WITH BOOTROM
+    } else {
+        timer.div = 0xABCC;  // POST-BOOT VALUE
+    }
     timer.tima = 0x00;
     timer.tma = 0x00;
     timer.tac = 0x00;

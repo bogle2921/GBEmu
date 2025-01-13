@@ -28,7 +28,8 @@ static const char* component_names[] = {
     "cart",
     "dma",
     "timer",
-    "interrupt"
+    "interrupt",
+    "tests"
 };
 
 // ROTATE IF LOG FILE GREATER THAN 10MB, ROTATING UP TO 3 FILES
@@ -106,33 +107,39 @@ void log_message(LogComponent component, LogLevel level, const char* fmt, ...) {
         return;
     }
 
-    time_t t = time(NULL);
-    struct tm* tm = localtime(&t);
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm);
-
-    const char* level_str = "UNKNOWN";
-    switch(level) {
-        case LOG_ERROR: level_str = "ERROR"; break;
-        case LOG_WARN:  level_str = "WARN"; break;
-        case LOG_INFO:  level_str = "INFO"; break;
-        case LOG_DEBUG: level_str = "DEBUG"; break;
-        case LOG_TRACE: level_str = "TRACE"; break;
-    }
-
     va_list args;
     va_start(args, fmt);
     char message[4096];
     vsnprintf(message, sizeof(message), fmt, args);
     va_end(args);
 
-    #ifdef DEBUG
-    printf("[%s][%s] %s\n", timestamp, level_str, message);
-    #endif
-    
-    fprintf(ctx->file, "[%s][%s] %s\n", timestamp, level_str, message);
-    fflush(ctx->file);
 
-    check_rotate_log(component);
+    if (level != LOG_TEST) {
+
+        time_t t = time(NULL);
+        struct tm* tm = localtime(&t);
+        char timestamp[32];
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm);
+
+        const char* level_str = "UNKNOWN";
+        switch(level) {
+            case LOG_ERROR: level_str = "ERROR"; break;
+            case LOG_WARN:  level_str = "WARN"; break;
+            case LOG_INFO:  level_str = "INFO"; break;
+            case LOG_DEBUG: level_str = "DEBUG"; break;
+            case LOG_TRACE: level_str = "TRACE"; break;
+        }
+
+        #ifdef DEBUG
+        printf("[%s][%s] %s\n", timestamp, level_str, message);
+        #endif
+        
+        fprintf(ctx->file, "[%s][%s] %s\n", timestamp, level_str, message);
+        fflush(ctx->file);
+        check_rotate_log(component);
+    } else {
+        fprintf(ctx->file, "%s\n", message);
+        fflush(ctx->file);
+    }
 }
 

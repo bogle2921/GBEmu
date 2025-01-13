@@ -70,6 +70,20 @@ static const char* LICENSES[0xA5] = {
     [0xA4] = "Konami (Yu-Gi-Oh!)"
 };
 
+// CGB (OFFSET 0x0143)
+static void detect_cgb_mode(const u8* rom_data) {
+    // ONLY CHECK THE ACTUAL CGB FLAGS - NO SPECIAL CASES
+    if (rom_data[0x0143] == 0x80 || rom_data[0x0143] == 0xC0) {
+        c.is_cgb = true; 
+        c.mode3_length = 172;
+        LOG_INFO(LOG_MAIN, "DETECTED GAME BOY COLOR CART");
+    } else {
+        c.is_cgb = false;
+        c.mode3_length = 168;
+        LOG_INFO(LOG_MAIN, "STANDARD GAME BOY CART");
+    }
+}
+
 bool load_bootrom(const char* bootrom) {
     LOG_INFO(LOG_MAIN, "LOADING BOOTROM: %s", bootrom);
 
@@ -102,7 +116,6 @@ bool load_bootrom(const char* bootrom) {
 
     // COPY DIRECTLY TO BUS BOOTROM BUFFER 
     load_bootrom_data(boot_data, c.boot_rom_size);
-    set_bootrom_enable(true);
 
     LOG_INFO(LOG_MAIN, "BOOTROM LOADED SUCCESSFULLY");
     fclose(boot_rom_file);
@@ -263,6 +276,9 @@ bool load_cartridge(const char* cart) {
     c.header->title[15] = '\0';
     describe_cartridge(&c);
 
+    // CGB DETECTION
+    detect_cgb_mode(c.rom_data);
+
     if (!validate_checksum(c.rom_data, c.header->checksum)) {
         LOG_WARN(LOG_MAIN, "HEADER CHECKSUM VALIDATION FAILED");
     }
@@ -317,7 +333,6 @@ bool load_cartridge(const char* cart) {
         case MBC2_BATTERY:
             c.mbc_type = c.header->type;
             c.has_battery = (c.header->type == MBC2_BATTERY);
-            c.ram_size = 512;  // FIXED 512x4 BIT RAM
             break;
             
         case MBC3_TIMER_BATTERY:
@@ -345,24 +360,27 @@ bool load_cartridge(const char* cart) {
             return false;
     }
 
-    // ALLOCATE RAM IF NEEDED (EXCEPT MBC2 WHICH WAS HANDLED ABOVE)
+    // ALLOCATE RAM IF NEEDED
     if (c.mbc_type != MBC2 && c.mbc_type != MBC2_BATTERY) {
         switch(c.header->size_ram) {
-            case 0x00: c.ram_size = 0; break;
-            case 0x01: c.ram_size = 2048; break;     // 2KB
-            case 0x02: c.ram_size = 8192; break;     // 8KB
-            case 0x03: c.ram_size = 32768; break;    // 32KB
-            case 0x04: c.ram_size = 131072; break;   // 128KB
-            case 0x05: c.ram_size = 65536; break;    // 64KB
+            case 0x00: c.ram_size = 0;      break;
+            case 0x01: c.ram_size = 2048;   break; // 2KB
+            case 0x02: c.ram_size = 8192;   break; // 8KB
+            case 0x03: c.ram_size = 32768;  break; // 32KB
+            case 0x04: c.ram_size = 131072; break; // 128KB
+            case 0x05: c.ram_size = 65536;  break; // 64KB
             default:
                 LOG_WARN(LOG_MAIN, "UNKNOWN RAM SIZE CODE: 0x%02X", c.header->size_ram);
                 c.ram_size = 0;
         }
+    } else {
+        // MBC2 512 BYTES
+        c.ram_size = 512;
     }
 
     // ALLOCATE RAM IF NEEDED
     if (c.ram_size > 0) {
-        c.ram_data = calloc(1, c.ram_size);
+        c.ram_data = calloc(1, c.ram_size); // ALREADY ZEROED BY calloc()
         if (!c.ram_data) {
             LOG_ERROR(LOG_MAIN, "FAILED TO ALLOCATE RAM: %u BYTES", c.ram_size);
             free(c.rom_data);
@@ -383,13 +401,11 @@ bool load_cartridge(const char* cart) {
     }
 
     // INIT BANKING
-    memset(c.ram_data, 0, c.ram_size); // ZERO OUT RAM
     c.current_rom_bank = 1;
     c.current_ram_bank = 0;
     c.banking_mode = 0;
     c.ram_enabled = false;
 
-    // LOADING IF POSSIBLE
     load_battery();
 
     LOG_INFO(LOG_MAIN, "CARTRIDGE LOADED: TYPE=%02X RAM=%uKB BATTERY=%d RTC=%d",

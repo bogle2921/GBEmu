@@ -22,7 +22,7 @@ typedef struct {
 } gameboy;
 
 // CORE SYSTEM CONTROL
-void gameboy_init();
+void gameboy_init(bool bootrom_enabled);
 void gameboy_destroy();
 void run_gb();
 gameboy* get_gb();

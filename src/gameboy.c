@@ -11,12 +11,13 @@ gameboy* get_gb() {
     return &GB;
 }
 
-void gameboy_init() {
+void gameboy_init(bool bootrom_enabled) {
     memset(&GB, 0, sizeof(GB));
+    GB.bootrom_enabled = bootrom_enabled;
 
     // NOTE: DONT TRY TO INIT RAM HERE, IT SHOULD ALREADY BE DONE
     interrupt_init();  // INTERRUPTS FIRST  
-    timer_init();      // THEN OTHER SUBSYSTEMS      
+    timer_init();      // THEN OTHER SUBSYSTEMS
     cpu_init();
     graphics_init();
     
@@ -40,8 +41,9 @@ void run_gb() {
         // SYNC TO 4194304 CYCLES PER SECOND (59.7275 HZ)
         while (GB.cycles_this_frame < CYCLES_PER_FRAME) {
             if (!GB.paused) {
-                handle_interrupts();
+                
                 cpu_step();
+                handle_interrupts();
                 
                 u8 cycles = get_cpu_cycles();
                 GB.cycles_this_frame += cycles;
@@ -50,9 +52,7 @@ void run_gb() {
                 for (int t = 0; t < cycles; t += 4) {
                     timer_tick();
                     dma_tick();
-                    for (int i = 0; i < 4; i++) {
-                        graphics_tick();
-                    }
+                    graphics_tick();
                 }
             }
         }
@@ -75,10 +75,8 @@ void run_gb() {
 
 void set_bootrom_enable(bool enable) {
     GB.bootrom_enabled = enable;
-    LOG_DEBUG(LOG_CART, "SETTING BOOTROM STATUS TO: enabled=%d", GB.bootrom_enabled);
 }
 
 bool get_bootrom_enable() {
-    LOG_DEBUG(LOG_CART, "BOOTROM STATUS CHECK: enabled=%d", GB.bootrom_enabled);
     return GB.bootrom_enabled;
 }

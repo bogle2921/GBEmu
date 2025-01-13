@@ -6,9 +6,7 @@
 #include "config.h"
 
 int main(int argc, char** argv) {
-    
-    // INIT LOGGER - CAREFUL SETTING INIT LEVEL TO TRACE...
-    // LOG_TRACE WILL BASICALLY WRITE AS FAST AS YOU CAN WRITE TO DISK
+    // INIT LOGGER
     #ifdef DEBUG
     logger_init(LOG_TRACE);
     #else
@@ -20,23 +18,26 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    bool bootrom_exists = argc == 3;
+
     // INIT BUS FIRST
     init_bus();
-    
-    // INIT REST OF SYSTEMS
-    gameboy_init();
 
     // LOAD BOOT ROM
-    if (argc == 3 && !load_bootrom(argv[1])) {
+    if (bootrom_exists && !load_bootrom(argv[1])) {
         LOG_WARN(LOG_MAIN, "Bootrom missing / error: %s\n", argv[1]);
         return 1;
     }
 
     // LOAD CARTRIDGE
-    if (!load_cartridge(argv[argc == 3 ? 2 : 1])) {
-        LOG_ERROR(LOG_MAIN, "Failed to load cartridge: %s\n", argv[2]);
+    int rom_index = bootrom_exists ? 2 : 1;
+    if (!load_cartridge(argv[rom_index])) {
+        LOG_ERROR(LOG_MAIN, "Failed to load cartridge: %s\n", argv[rom_index]);
         return 1;
     }
+
+    // INIT REST OF SYSTEMS
+    gameboy_init(bootrom_exists);
 
     // RUN EMULATION
     run_gb();
