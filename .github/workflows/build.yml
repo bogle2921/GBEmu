@@ -15,9 +15,9 @@ jobs:
           - os: ubuntu-latest
             output: gb-emu
             artifact: gb-emu-linux
-          # - os: macos-latest
-          #   output: gb-emu
-          #   artifact: gb-emu-macos
+          - os: macos-latest
+            output: gb-emu
+            artifact: gb-emu-macos
           - os: windows-latest
             output: gb-emu.exe
             artifact: gb-emu-windows
@@ -26,13 +26,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-
-    # SETUP SDL2 FOR LINUX AND MACOS
-    - name: Install SDL2 (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libsdl2-dev
 
     # BUILD USING MAKEFILE
     - name: Build
@@ -67,4 +60,4 @@ jobs:
         files: |
           gb-emu-linux/gb-emu
           gb-emu-windows/gb-emu.exe
-#          gb-emu-macos/gb-emu
+          gb-emu-macos/gb-emu
