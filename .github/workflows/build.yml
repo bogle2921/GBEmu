@@ -46,8 +46,8 @@ jobs:
   release:
     needs: build
     
-    # ONLY BUILD RELEASE WHEN WE PUSH A TAG
-    if: startsWith(github.ref, 'refs/tags/v')
+    # ONLY BUILD MERGED PR'S
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     
     steps:
