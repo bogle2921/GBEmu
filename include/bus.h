@@ -123,10 +123,14 @@
 #define WX_REG          (IO_START + IO_WX)
 
 void init_bus(void);
+void bus_reset(void);   // PRESERVES BOOTROM
 u8 read_from_bus(u16 addr);
 void write_to_bus(u16 addr, u8 val);
 u8* get_memory_ptr(u16 addr);
 void debug_dump_bootrom(u8 num_bytes);
 void load_bootrom_data(u8* data, u32 size);
+
+void bus_save_state(FILE* fp);
+void bus_load_state(FILE* fp);
 
 #endif

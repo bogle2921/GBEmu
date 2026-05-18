@@ -33,3 +33,6 @@ void dma_tick() {
 bool get_dma_active() {
     return DMA.isActive;  // TRUE IF TRANSFER IN PROGRESS
 }
+
+void dma_save_state(FILE* fp) { fwrite(&DMA, sizeof(DMA), 1, fp); }
+void dma_load_state(FILE* fp) { fread(&DMA, sizeof(DMA), 1, fp); }

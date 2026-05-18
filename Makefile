@@ -1,5 +1,5 @@
 # OFFICIAL MAKEFILE FOR GB-EMU
-# BY LINUS TORVALDS... JK BANDIT AND NICK HEYER 
+# BY LINUS TORVALDS... JK BANDIT AND NICK HEYER
 
 CC := gcc
 RM := rm -rf
@@ -10,16 +10,14 @@ SRC_DIR := src
 BUILD_DIR := build
 BIN_DIR := bin
 ROM_DIR := roms
-RM := rm -rf
-EXE :=
 LOG_DIR := logs
 INCLUDE_DIR := include
+EXE :=
 
 # BASE FLAGS
 BASE_CFLAGS := -Wall -Wextra -std=c11
-INCLUDES := -I $(INCLUDE_DIR)
+INCLUDES := -I $(INCLUDE_DIR) -I lib/nuklear
 LDFLAGS :=
-
 
 # OS SPECIFIC FLAGS AND LIBS
 ifeq ($(OS),Windows_NT)
@@ -29,19 +27,19 @@ ifeq ($(OS),Windows_NT)
     LDFLAGS += -L./lib/$(PLATFORM_DIR) -lmingw32 -lSDL2main -lSDL2 -mwindows -lsetupapi -lwinmm -lversion
 else
     UNAME_S := $(shell uname -s)
-		ifeq ($(UNAME_S),Darwin)
-				PLATFORM_DIR = macos
-				LDFLAGS += -L./lib/$(PLATFORM_DIR) -lSDL2main -lSDL2 \
-									-framework AudioToolbox -framework CoreAudio \
-									-framework CoreHaptics -framework CoreServices \
-									-framework Carbon -framework ForceFeedback \
-									-framework GameController -framework IOKit \
-									-framework Cocoa -framework OpenGL -framework Metal \
-									-framework CoreVideo -framework CoreFoundation \
-									-liconv
+        ifeq ($(UNAME_S),Darwin)
+                PLATFORM_DIR = macos
+                LDFLAGS += -L./lib/$(PLATFORM_DIR) -lSDL2main -lSDL2 \
+                                    -framework AudioToolbox -framework CoreAudio \
+                                    -framework CoreHaptics -framework CoreServices \
+                                    -framework Carbon -framework ForceFeedback \
+                                    -framework GameController -framework IOKit \
+                                    -framework Cocoa -framework OpenGL -framework Metal \
+                                    -framework CoreVideo -framework CoreFoundation \
+                                    -liconv
     else
         PLATFORM_DIR = linux
-        LDFLAGS += -L./lib/$(PLATFORM_DIR) -lSDL2main -lSDL2
+        LDFLAGS += -L./lib/$(PLATFORM_DIR) -lSDL2main -lSDL2 -lm
 		BASE_CFLAGS += -D_POSIX_C_SOURCE=199309L
     endif
 endif

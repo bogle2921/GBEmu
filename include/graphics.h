@@ -100,6 +100,7 @@ typedef struct {
 // INITIALIZATION
 void graphics_init();
 void graphics_cleanup();
+void graphics_reset();  // PPU STATE ONLY; KEEPS SDL HANDLES
 
 // MAIN RENDERING PIPELINE
 void graphics_tick();
@@ -120,5 +121,9 @@ void lcd_write(u16 addr, u8 val);
 // DEBUG
 void update_debug_window();
 void dump_frame_buffer_sample();
+
+// SAVE STATE (SDL HANDLES ARE SKIPPED; FRAMEBUFFER REGENERATES)
+void graphics_save_state(FILE* fp);
+void graphics_load_state(FILE* fp);
 
 #endif

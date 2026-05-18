@@ -1,5 +1,7 @@
 #include "logger.h"
 #include "cpu.h"
+#include "joypad.h"
+#include "interrupt.h"
 
 /*
 THIS FILE IS ALSO A BIT MUCH.
@@ -1018,9 +1020,15 @@ static void halt(void) {
     CPU.cycles = 4;
 }
 
-// STOP - "STOPS" POSSIBLY UNTIL BTN PRESS, LIKE SLEEP MODE
+// STOP - LOW-POWER MODE UNTIL JOYPAD WAKES US. ALSO ZEROES DIV.
+// REAL HARDWARE: SKIPS THE BYTE AFTER 0x10 (STOP IS 2 BYTES). RESETS DIV
+// AND TIMER. WAITS UNTIL ANY KEY DOWN; ON CGB ALSO TRIGGERS SPEED SWITCH
+// IF REQUESTED. WE HANDLE THE COMMON CASE: SKIP THE PADDING BYTE, RESET
+// DIV VIA THE TIMER REGISTER, AND BLOCK CPU UNTIL AN INTERRUPT IS PENDING.
 static void stop(void) {
-    CPU.stopped = 1;
+    CPU.reg.pc++;                  // CONSUME THE 0x00 PADDING BYTE
+    write_to_bus(DIV_REG, 0);     // STOP RESETS DIV
+    CPU.stopped = true;
     CPU.cycles = 4;
 }
 
@@ -1479,6 +1487,16 @@ void cpu_step(void) {
         }
     }
 
+    if (CPU.stopped) {
+        // STOP WAKES ON ANY JOYPAD KEY DOWN REGARDLESS OF P14/P15 SELECTION.
+        if (joypad_any_pressed()) {
+            CPU.stopped = false;
+        } else {
+            CPU.cycles = 4;
+            return;
+        }
+    }
+
 #if LOG_VERBOSE_CPU
     // FOR PARSED TEST LOGS - VERY EXPENSIVE, ONLY ENABLE WHEN DIFFING TRACES
     u8 mem[4];
@@ -1546,4 +1564,12 @@ bool is_cpu_halted(void) {
 
 void set_cpu_halted(bool val) {
     CPU.halted = val;
+}
+
+// SAVE STATE: ENTIRE cpu STRUCT (NO POINTERS INSIDE)
+void cpu_save_state(FILE* fp) {
+    fwrite(&CPU, sizeof(CPU), 1, fp);
+}
+void cpu_load_state(FILE* fp) {
+    fread(&CPU, sizeof(CPU), 1, fp);
 }

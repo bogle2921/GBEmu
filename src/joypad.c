@@ -48,6 +48,10 @@ void joypad_release(gb_button b) {
     buttons &= (u8)~b;
 }
 
+bool joypad_any_pressed(void) {
+    return buttons != 0;
+}
+
 u8 joypad_read(void) {
     return 0xC0 | (column_select & 0x30) | compute_lower_nibble();
 }
@@ -55,4 +59,13 @@ u8 joypad_read(void) {
 void joypad_write(u8 val) {
     // ONLY BITS 5 AND 4 ARE WRITABLE
     column_select = val & 0x30;
+}
+
+void joypad_save_state(FILE* fp) {
+    fwrite(&buttons, sizeof(buttons), 1, fp);
+    fwrite(&column_select, sizeof(column_select), 1, fp);
+}
+void joypad_load_state(FILE* fp) {
+    fread(&buttons, sizeof(buttons), 1, fp);
+    fread(&column_select, sizeof(column_select), 1, fp);
 }

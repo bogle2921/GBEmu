@@ -139,6 +139,50 @@ static bool is_mbc5() {
     return (c.header->type >= 0x19 && c.header->type <= 0x1E);
 }
 
+// ---------------------------------------------------------------------------
+// MBC3 RTC
+// ---------------------------------------------------------------------------
+
+// LATCH: ADVANCE THE VISIBLE RTC REGISTERS BY (NOW - rtc_last) SECONDS.
+// CALLED ON A 0x00 -> 0x01 WRITE SEQUENCE TO 0x6000-0x7FFF.
+static void rtc_latch(void) {
+    time_t now = time(NULL);
+    // HALTED: KEEP rtc_last MOVING SO THE NEXT UN-HALT STARTS FRESH.
+    if (c.rtc_reg[4] & 0x40) {
+        c.rtc_last = now;
+        return;
+    }
+    long delta = (long)(now - c.rtc_last);
+    if (delta < 0) delta = 0;  // SYSTEM CLOCK WENT BACKWARDS
+    c.rtc_last = now;
+
+    u64 total =
+        (u64)c.rtc_reg[0] +
+        60ull   * c.rtc_reg[1] +
+        3600ull * c.rtc_reg[2] +
+        86400ull * ((u64)c.rtc_reg[3] | (((u64)(c.rtc_reg[4] & 0x01)) << 8));
+    total += (u64)delta;
+
+    u64 days = total / 86400ull;
+    u64 sec  = total % 86400ull;
+
+    c.rtc_reg[0] = (u8)(sec % 60);
+    c.rtc_reg[1] = (u8)((sec / 60) % 60);
+    c.rtc_reg[2] = (u8)((sec / 3600) % 24);
+    c.rtc_reg[3] = (u8)(days & 0xFF);
+
+    u8 dh = c.rtc_reg[4] & 0xC0;        // PRESERVE HALT + CARRY
+    if (days > 0x1FF) dh |= 0x80;       // OVERFLOW LATCH
+    dh |= (u8)((days >> 8) & 0x01);
+    c.rtc_reg[4] = dh;
+}
+
+// TRUE WHEN current_ram_bank IS A VALID RTC REGISTER INDEX (0x08..0x0C).
+static bool rtc_bank_selected(void) {
+    return c.has_rtc &&
+           c.current_ram_bank >= 0x08 && c.current_ram_bank <= 0x0C;
+}
+
 static u32 get_rom_offset(u16 addr) {
     // BANK 0 IS ALWAYS FIXED
     if (addr < ROM_BANK) return addr;
@@ -406,6 +450,15 @@ bool load_cartridge(const char* cart) {
     c.banking_mode = 0;
     c.ram_enabled = false;
 
+    // INIT RTC ANCHOR SO FIRST LATCH DOESN'T COMPUTE A HUGE DELTA. IF A
+    // SAVE EXISTS WITH RTC DATA, load_battery WILL OVERWRITE THIS BELOW.
+    if (c.has_rtc) {
+        memset(c.rtc_reg, 0, sizeof(c.rtc_reg));
+        c.rtc_latched = false;
+        c.rtc_latch_last = 0xFF;
+        c.rtc_last = time(NULL);
+    }
+
     load_battery();
 
     LOG_INFO(LOG_MAIN, "CARTRIDGE LOADED: TYPE=%02X RAM=%uKB BATTERY=%d RTC=%d",
@@ -426,16 +479,23 @@ u8 read_cart(u16 addr) {
 
 u8 read_cart_ram(u16 addr) {
     // CHECK RAM ACCESS
-    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled || !c.ram_data) {
+    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled) {
         return 0xFF;
     }
+
+    // RTC REGISTER WINDOW (MBC3 WITH BANK 08..0C SELECTED)
+    if (rtc_bank_selected()) {
+        return c.rtc_reg[c.current_ram_bank - 0x08];
+    }
+
+    if (!c.ram_data) return 0xFF;
 
     // GET CORRECT RAM OFFSET BASED ON MBC TYPE
     u32 offset = get_ram_offset(addr);
     if (offset >= c.ram_size) {
         LOG_ERROR(LOG_BUS, "RAM READ OUT OF BOUNDS: ADDR=0x%04X BANK=%02X OFFSET=0x%08X",
                 addr, c.current_ram_bank, offset);
-        return 0xFF; 
+        return 0xFF;
     }
 
     return c.ram_data[offset];
@@ -460,10 +520,19 @@ void write_to_cart(u16 addr, u8 val) {
             if (val == 0) val = 1;
             c.current_rom_bank = val;
         }
+        else if (is_mbc5()) {
+            // MBC5 SPLITS THE BANK NUMBER: 0x2000-0x2FFF = LOW 8 BITS,
+            // 0x3000-0x3FFF = BIT 8. NO "BANK 0 -> 1" QUIRK ON MBC5.
+            if (addr < 0x3000) {
+                c.current_rom_bank = (c.current_rom_bank & 0x100) | val;
+            } else {
+                c.current_rom_bank = (c.current_rom_bank & 0xFF) | ((val & 1) << 8);
+            }
+        }
         return;
     }
 
-    // RAM BANK SELECT
+    // RAM BANK SELECT (OR RTC REGISTER SELECT FOR MBC3)
     if (addr < 0x6000) {
         if (is_mbc1()) {
             if (c.banking_mode == 0) {
@@ -473,27 +542,57 @@ void write_to_cart(u16 addr, u8 val) {
             }
         }
         else if (is_mbc3()) {
-            if (val <= 0x03) {
+            // 0x00..0x03 -> RAM BANK; 0x08..0x0C -> MAPS RTC REG INTO RAM AREA.
+            if (val <= 0x03 || (val >= 0x08 && val <= 0x0C)) {
                 c.current_ram_bank = val;
             }
-            // RTC REGISTERS 08-0C HANDLED HERE IF NEEDED
+        }
+        else if (is_mbc5()) {
+            c.current_ram_bank = val & 0x0F;
         }
         return;
     }
 
-    // BANKING MODE SELECT (MBC1 ONLY)
-    if (addr < 0x8000 && is_mbc1()) {
-        c.banking_mode = val & 0x01;
+    // 0x6000-0x7FFF: MBC1 BANKING MODE / MBC3 RTC LATCH
+    if (addr < 0x8000) {
+        if (is_mbc1()) {
+            c.banking_mode = val & 0x01;
+        } else if (is_mbc3() && c.has_rtc) {
+            // 0x00 THEN 0x01 LATCHES THE INTERNAL RTC INTO THE VISIBLE REGS
+            if (c.rtc_latch_last == 0x00 && val == 0x01) {
+                rtc_latch();
+            }
+            c.rtc_latch_last = val;
+        }
     }
 }
 
 void write_cart_ram(u16 addr, u8 val) {
     // CHECK RAM ACCESS PERMISSION
-    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled || !c.ram_data) {
+    if (addr < RAM_START || addr >= WRAM_START || !c.ram_enabled) {
         return;
     }
 
-    // GET CORRECT RAM OFFSET BASED ON MBC TYPE 
+    // RTC REGISTER WINDOW (MBC3 WITH BANK 08..0C SELECTED). WRITES ARE
+    // DIRECT - GAMES USE THIS TO SET THE TIME. PIN rtc_last ON WRITE SO THE
+    // NEXT LATCH ADVANCES FROM THIS NEW BASELINE.
+    if (rtc_bank_selected()) {
+        u8 idx = c.current_ram_bank - 0x08;
+        // SEC / MIN: 0..59. HOUR: 0..23. DAY_HI MASKED TO BITS WE STORE.
+        switch (idx) {
+            case 0: c.rtc_reg[0] = val & 0x3F; break;
+            case 1: c.rtc_reg[1] = val & 0x3F; break;
+            case 2: c.rtc_reg[2] = val & 0x1F; break;
+            case 3: c.rtc_reg[3] = val;        break;
+            case 4: c.rtc_reg[4] = val & 0xC1; break;  // DAY MSB + HALT + CARRY
+        }
+        c.rtc_last = time(NULL);
+        return;
+    }
+
+    if (!c.ram_data) return;
+
+    // GET CORRECT RAM OFFSET BASED ON MBC TYPE
     u32 offset = get_ram_offset(addr);
     if (offset >= c.ram_size) {
         LOG_ERROR(LOG_BUS, "RAM WRITE OUT OF BOUNDS: ADDR=0x%04X BANK=%02X OFFSET=0x%08X",
@@ -501,7 +600,7 @@ void write_cart_ram(u16 addr, u8 val) {
         return;
     }
 
-    LOG_TRACE(LOG_BUS, "RAM WRITE: [0x%04X] <- 0x%02X (BANK=%02X)", 
+    LOG_TRACE(LOG_BUS, "RAM WRITE: [0x%04X] <- 0x%02X (BANK=%02X)",
             addr, val, c.current_ram_bank);
     c.ram_data[offset] = val;
 }
@@ -635,6 +734,60 @@ bool save_battery(void) {
     fclose(f);
     LOG_INFO(LOG_CART, "SAVED BATTERY TO: %s", save_file);
     return true;
+}
+
+// SAVE STATE: BANKING + RAM ONLY. THE ROM ITSELF AND THE FILENAME COME
+// FROM THE LOADED CART. LAYOUT IS A SMALL TLV-LIKE BLOB:
+//   u8  mbc_type
+//   u8  current_rom_bank
+//   u8  current_ram_bank
+//   u8  banking_mode
+//   u8  ram_enabled
+//   u32 ram_size  (FOR VERIFICATION)
+//   <ram_size bytes of RAM>
+//   <5 bytes RTC regs>
+//   u8  rtc_latched
+//   <8 bytes rtc_last>
+void cart_save_state(FILE* fp) {
+    fwrite(&c.mbc_type,         sizeof(c.mbc_type),         1, fp);
+    fwrite(&c.current_rom_bank, sizeof(c.current_rom_bank), 1, fp);
+    fwrite(&c.current_ram_bank, sizeof(c.current_ram_bank), 1, fp);
+    fwrite(&c.banking_mode,     sizeof(c.banking_mode),     1, fp);
+    fwrite(&c.ram_enabled,      sizeof(c.ram_enabled),      1, fp);
+    fwrite(&c.ram_size,         sizeof(c.ram_size),         1, fp);
+    if (c.ram_size > 0 && c.ram_data) {
+        fwrite(c.ram_data, 1, c.ram_size, fp);
+    }
+    fwrite(c.rtc_reg,    sizeof(c.rtc_reg),    1, fp);
+    fwrite(&c.rtc_latched, sizeof(c.rtc_latched), 1, fp);
+    fwrite(&c.rtc_last,    sizeof(c.rtc_last),    1, fp);
+}
+void cart_load_state(FILE* fp) {
+    fread(&c.mbc_type,         sizeof(c.mbc_type),         1, fp);
+    fread(&c.current_rom_bank, sizeof(c.current_rom_bank), 1, fp);
+    fread(&c.current_ram_bank, sizeof(c.current_ram_bank), 1, fp);
+    fread(&c.banking_mode,     sizeof(c.banking_mode),     1, fp);
+    fread(&c.ram_enabled,      sizeof(c.ram_enabled),      1, fp);
+    u32 ram_size_in_file = 0;
+    fread(&ram_size_in_file, sizeof(ram_size_in_file), 1, fp);
+    if (ram_size_in_file > 0 && c.ram_data && ram_size_in_file == c.ram_size) {
+        fread(c.ram_data, 1, c.ram_size, fp);
+    } else if (ram_size_in_file > 0) {
+        // SIZE MISMATCH - SKIP THE BYTES TO KEEP STREAM ALIGNED
+        fseek(fp, (long)ram_size_in_file, SEEK_CUR);
+    }
+    fread(c.rtc_reg,    sizeof(c.rtc_reg),    1, fp);
+    fread(&c.rtc_latched, sizeof(c.rtc_latched), 1, fp);
+    fread(&c.rtc_last,    sizeof(c.rtc_last),    1, fp);
+}
+
+// RESET BANKING STATE. ROM/RAM ALLOCATIONS UNTOUCHED.
+void cart_reset(void) {
+    c.current_rom_bank = 1;
+    c.current_ram_bank = 0;
+    c.banking_mode = 0;
+    c.ram_enabled = false;
+    c.rtc_latched = false;
 }
 
 void cart_cleanup(void) {

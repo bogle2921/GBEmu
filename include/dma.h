@@ -14,5 +14,7 @@ struct dma {
 void dma_start(u8 val);
 void dma_tick();
 bool get_dma_active();
+void dma_save_state(FILE* fp);
+void dma_load_state(FILE* fp);
 
 #endif

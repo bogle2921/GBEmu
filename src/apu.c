@@ -29,6 +29,10 @@ static size_t sample_buf_pos = 0;
 // SDL AUDIO STATE
 static SDL_AudioDeviceID audio_dev = 0;
 
+// USER-LEVEL CONTROLS (NOT GB HARDWARE)
+static float user_master_volume = 1.0f;       // 0.0 .. 1.0
+static bool  user_channel_on[4] = { true, true, true, true };  // CH1..CH4 MUTES
+
 // DUTY PATTERNS FOR SQUARE CHANNELS (8-STEP WAVEFORMS, 1=HIGH)
 static const u8 DUTY_PATTERNS[4] = {
     0x01,  // 12.5%   0 0 0 0 0 0 0 1
@@ -286,21 +290,21 @@ static void step_channels_t(void) {
 }
 
 static u8 ch1_sample(void) {
-    if (!apu.ch1_enabled) return 0;
+    if (!apu.ch1_enabled || !user_channel_on[0]) return 0;
     u8 pattern = DUTY_PATTERNS[(apu.nr11 >> 6) & 0x03];
     u8 bit = (pattern >> apu.ch1_duty_pos) & 1;
     return bit ? apu.ch1_volume : 0;
 }
 
 static u8 ch2_sample(void) {
-    if (!apu.ch2_enabled) return 0;
+    if (!apu.ch2_enabled || !user_channel_on[1]) return 0;
     u8 pattern = DUTY_PATTERNS[(apu.nr21 >> 6) & 0x03];
     u8 bit = (pattern >> apu.ch2_duty_pos) & 1;
     return bit ? apu.ch2_volume : 0;
 }
 
 static u8 ch3_sample(void) {
-    if (!apu.ch3_enabled || !(apu.nr30 & 0x80)) return 0;
+    if (!apu.ch3_enabled || !(apu.nr30 & 0x80) || !user_channel_on[2]) return 0;
     u8 byte = apu.wave_ram[apu.ch3_sample_pos >> 1];
     u8 nibble = (apu.ch3_sample_pos & 1) ? (byte & 0x0F) : (byte >> 4);
     u8 shift_code = (apu.nr32 >> 5) & 0x03;
@@ -315,7 +319,7 @@ static u8 ch3_sample(void) {
 }
 
 static u8 ch4_sample(void) {
-    if (!apu.ch4_enabled) return 0;
+    if (!apu.ch4_enabled || !user_channel_on[3]) return 0;
     // CHANNEL EMITS WHEN BIT0 OF LFSR IS 0
     if ((apu.ch4_lfsr & 1) == 0) return apu.ch4_volume;
     return 0;
@@ -364,9 +368,9 @@ static void emit_sample(void) {
     right *= rvol;
 
     // SCALE TO 16-BIT RANGE. PEAK = 4 CHANNELS * 15 * 8 MASTER = 480;
-    // *60 -> ~28800 PEAK, LEAVES SOME HEADROOM.
-    float l_in = (float)(left  * 60);
-    float r_in = (float)(right * 60);
+    // *60 -> ~28800 PEAK, LEAVES SOME HEADROOM. APPLY USER VOLUME ON TOP.
+    float l_in = (float)(left  * 60) * user_master_volume;
+    float r_in = (float)(right * 60) * user_master_volume;
 
     // DC BLOCK
     i16 l = hpf_step(l_in, &hpf_prev_in_l, &hpf_prev_out_l);
@@ -417,6 +421,29 @@ void apu_cleanup(void) {
         SDL_CloseAudioDevice(audio_dev);
         audio_dev = 0;
     }
+}
+
+// RESET CHANNEL STATE BUT KEEP THE AUDIO DEVICE AND USER PREFERENCES.
+void apu_reset(void) {
+    // PRESERVE USER PREFERENCES ACROSS RESET
+    float vol = user_master_volume;
+    bool ch_on[4];
+    memcpy(ch_on, user_channel_on, sizeof(ch_on));
+
+    memset(&apu, 0, sizeof(apu));
+    apu.power = true;
+    apu.nr52 = 0xF1;
+    apu.nr50 = 0x77;
+    apu.nr51 = 0xF3;
+    apu.frame_seq_counter = FRAME_SEQ_PERIOD_T;
+    apu.ch4_lfsr = 0x7FFF;
+
+    hpf_prev_in_l = hpf_prev_out_l = 0.0f;
+    hpf_prev_in_r = hpf_prev_out_r = 0.0f;
+    sample_buf_pos = 0;
+
+    user_master_volume = vol;
+    memcpy(user_channel_on, ch_on, sizeof(user_channel_on));
 }
 
 void apu_tick(void) {
@@ -589,4 +616,44 @@ void apu_write(u16 addr, u8 val) {
         case NR50_REG: apu.nr50 = val; break;
         case NR51_REG: apu.nr51 = val; break;
     }
+}
+
+// ---------------------------------------------------------------------------
+// USER CONTROLS
+// ---------------------------------------------------------------------------
+
+void apu_set_master_volume(float v) {
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    user_master_volume = v;
+}
+float apu_get_master_volume(void) { return user_master_volume; }
+
+void apu_set_channel_enabled(int ch, bool on) {
+    if (ch < 0 || ch > 3) return;
+    user_channel_on[ch] = on;
+}
+bool apu_get_channel_enabled(int ch) {
+    if (ch < 0 || ch > 3) return false;
+    return user_channel_on[ch];
+}
+
+// SAVE STATE: APU STRUCT + HPF FILTER MEMORY (USER PREFS ARE PERSISTED TOO).
+void apu_save_state(FILE* fp) {
+    fwrite(&apu, sizeof(apu), 1, fp);
+    fwrite(&hpf_prev_in_l,  sizeof(float), 1, fp);
+    fwrite(&hpf_prev_out_l, sizeof(float), 1, fp);
+    fwrite(&hpf_prev_in_r,  sizeof(float), 1, fp);
+    fwrite(&hpf_prev_out_r, sizeof(float), 1, fp);
+    fwrite(&user_master_volume, sizeof(float), 1, fp);
+    fwrite(user_channel_on, sizeof(user_channel_on), 1, fp);
+}
+void apu_load_state(FILE* fp) {
+    fread(&apu, sizeof(apu), 1, fp);
+    fread(&hpf_prev_in_l,  sizeof(float), 1, fp);
+    fread(&hpf_prev_out_l, sizeof(float), 1, fp);
+    fread(&hpf_prev_in_r,  sizeof(float), 1, fp);
+    fread(&hpf_prev_out_r, sizeof(float), 1, fp);
+    fread(&user_master_volume, sizeof(float), 1, fp);
+    fread(user_channel_on, sizeof(user_channel_on), 1, fp);
 }

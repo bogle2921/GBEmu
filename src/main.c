@@ -4,46 +4,39 @@
 #include "cart.h"
 #include "bus.h"
 #include "config.h"
+#include <string.h>
 
 int main(int argc, char** argv) {
-    // INIT LOGGER
     #ifdef DEBUG
     logger_init(LOG_TRACE);
     #else
     logger_init(LOG_DEBUG);
     #endif
 
-    if (argc < 2) {
-        LOG_WARN(LOG_MAIN, "Usage: %s [bootrom.bin] <game.gb>\n", argv[0]);
-        return 1;
-    }
-
-    bool bootrom_exists = argc == 3;
-
-    // INIT BUS FIRST
     init_bus();
 
-    // LOAD BOOT ROM
-    if (bootrom_exists && !load_bootrom(argv[1])) {
-        LOG_WARN(LOG_MAIN, "Bootrom missing / error: %s\n", argv[1]);
-        return 1;
+    bool bootrom_exists = false;
+    const char* cart_path = NULL;
+
+    if (argc == 2) {
+        cart_path = argv[1];
+    } else if (argc >= 3) {
+        if (load_bootrom(argv[1])) {
+            bootrom_exists = true;
+            cart_path = argv[2];
+        } else {
+            LOG_WARN(LOG_MAIN, "Bootrom missing / error: %s - treating as cart\n", argv[1]);
+            cart_path = argv[1];
+        }
     }
 
-    // LOAD CARTRIDGE
-    int rom_index = bootrom_exists ? 2 : 1;
-    if (!load_cartridge(argv[rom_index])) {
-        LOG_ERROR(LOG_MAIN, "Failed to load cartridge: %s\n", argv[rom_index]);
-        return 1;
+    if (cart_path && !load_cartridge(cart_path)) {
+        LOG_WARN(LOG_MAIN, "Failed to load cartridge '%s' - booting to splash\n", cart_path);
     }
 
-    // INIT REST OF SYSTEMS
     gameboy_init(bootrom_exists);
-
-    // RUN EMULATION
     run_gb();
 
-    // CLEANUP
     logger_cleanup();
-    
     return 0;
 }

@@ -19,8 +19,16 @@ void joypad_init(void);
 void joypad_press(gb_button b);
 void joypad_release(gb_button b);
 
+// TRUE IF ANY GB BUTTON IS CURRENTLY DOWN, REGARDLESS OF P14/P15 SELECTION.
+// CPU STOP USES THIS TO WAKE - REAL HARDWARE WAKES STOP ON ANY KEY DOWN,
+// NOT JUST WHEN A COLUMN IS SELECTED.
+bool joypad_any_pressed(void);
+
 // P1 REGISTER (FF00) I/O FROM THE BUS
 u8   joypad_read(void);
 void joypad_write(u8 val);
+
+void joypad_save_state(FILE* fp);
+void joypad_load_state(FILE* fp);
 
 #endif

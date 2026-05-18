@@ -19,5 +19,7 @@ u8 get_interrupt_flags();
 void set_interrupt_flags(u8 flags);
 u8 get_interrupt_enable();
 void set_interrupt_enable(u8 enable);
+void interrupt_save_state(FILE* fp);
+void interrupt_load_state(FILE* fp);
 
 #endif
