@@ -34,29 +34,22 @@ void timer_init(void) {
 }
 
 void timer_tick(void) {
-    // INCREMENT SYSTEM DIVIDER (ALWAYS RUNS)
-    timer.div++;
-    
-    // CHECK IF TIMER IS ENABLED
-    if (!(timer.tac & TAC_ENABLE)) {
-        timer.prev_bit = get_timer_bit();
-        return;
-    }
+    // CALLED ONCE PER M-CYCLE (4 T-CYCLES). THE INTERNAL DIV COUNTER
+    // ADVANCES EVERY T-CYCLE SO WE LOOP 4X TO CATCH ALL FALLING EDGES.
+    for (int t = 0; t < 4; t++) {
+        timer.div++;
 
-    // GET CURRENT BIT FOR FREQUENCY
-    bool current_bit = get_timer_bit();
-    
-    // FALLING EDGE DETECTION (1->0 TRANSITION)
-    if (timer.prev_bit && !current_bit) {
-        // CHECK FOR OVERFLOW
-        if (++timer.tima == 0) {
-            timer.tima = timer.tma;     // LOAD MODULO VALUE
-            interrupt_req(INT_TIMER);   // REQUEST INTERRUPT
-            LOG_WARN(LOG_TIMER, "TIMER OVERFLOW - LOADED TMA=0x%02X\n", timer.tma);
+        bool current_bit = get_timer_bit() && (timer.tac & TAC_ENABLE);
+
+        // FALLING EDGE DETECTION (1->0 TRANSITION)
+        if (timer.prev_bit && !current_bit) {
+            if (++timer.tima == 0) {
+                timer.tima = timer.tma;     // LOAD MODULO VALUE
+                interrupt_req(INT_TIMER);   // REQUEST INTERRUPT
+            }
         }
+        timer.prev_bit = current_bit;
     }
-    
-    timer.prev_bit = current_bit;
 }
 
 u8 timer_read(u16 addr) {
@@ -78,8 +71,16 @@ u8 timer_read(u16 addr) {
 void timer_write(u16 addr, u8 val) {
     switch(addr) {
         case DIV_REG:     // 0xFF04
-            timer.div = 0;  // ANY WRITE RESETS DIV
-            LOG_INFO(LOG_TIMER, "DIV RESET TO 0\n");
+            // WRITING DIV CAN CAUSE A TIMA TICK IF THE SELECTED BIT WAS HIGH
+            // (FALLING EDGE FROM 1 TO 0 AS THE COUNTER RESETS).
+            if (timer.prev_bit) {
+                if (++timer.tima == 0) {
+                    timer.tima = timer.tma;
+                    interrupt_req(INT_TIMER);
+                }
+            }
+            timer.div = 0;
+            timer.prev_bit = false;
             break;
             
         case TIMA_REG:    // 0xFF05

@@ -637,6 +637,23 @@ bool save_battery(void) {
     return true;
 }
 
+void cart_cleanup(void) {
+    if (c.has_battery) {
+        save_battery();
+    }
+    if (c.rom_data) {
+        free(c.rom_data);
+        c.rom_data = NULL;
+    }
+    if (c.ram_data) {
+        free(c.ram_data);
+        c.ram_data = NULL;
+    }
+    c.header = NULL;
+    c.rom_size = 0;
+    c.ram_size = 0;
+}
+
 bool load_battery(void) {
     // NO BATTERY = NO LOAD
     if (!c.has_battery || !c.ram_data || c.ram_size == 0) {

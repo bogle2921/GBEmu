@@ -68,7 +68,9 @@ static void set_reg_or_hl(u8 reg_idx, u8 value) {
 
 // DEBUGGING -----------------------------------------------------------------------
 
+__attribute__((unused))
 static void debug_opcode_state(bool is_before) {
+    (void)is_before;
     LOG_DEBUG(LOG_CPU, "\n--- %s [0x%02X] @ PC:0x%04X ---", 
         is_before ? "BEFORE" : "AFTER", CPU.opcode, CPU.reg.pc);
     
@@ -636,7 +638,7 @@ static void dec_r(void) {
 static void add_hl_rr(void) {
     u8 reg_pair = (CPU.opcode >> 4) & 0x03;
     u16 hl = MAKE_WORD(CPU.reg.h, CPU.reg.l);
-    u16 value;
+    u16 value = 0;
 
     switch (reg_pair) {
         case 0x00: value = MAKE_WORD(CPU.reg.b, CPU.reg.c); break; // BC
@@ -1024,7 +1026,8 @@ static void stop(void) {
 
 // DI - DISABLE INTERRUPTS
 static void di(void) {
-    CPU.ime = 0;  // INTERRUPT MASTER ENABLE FLAG
+    CPU.ime = 0;            // INTERRUPT MASTER ENABLE FLAG
+    CPU.ime_scheduled = 0;  // CANCEL ANY PENDING EI (DI/EI RACE)
     CPU.cycles = 4;
 }
 
@@ -1048,12 +1051,6 @@ static void cpl(void) {
 
 // JP nn - JUMP TO ABSOLUTE ADDRESS NN
 static void jp_nn(void) {
-    // GET CURRENT STATE
-    u16 old_pc = CPU.reg.pc;
-    u8 old_h = CPU.reg.h;
-    u8 old_l = CPU.reg.l;
-
-    // PERFORM JUMP
     u16 addr = read_word();
     CPU.reg.pc = addr;
     CPU.cycles = 16;
@@ -1062,7 +1059,7 @@ static void jp_nn(void) {
 // JP cc,nn - CONDITIONAL JUMP TO ABSOLUTE ADDRESS NN
 static void jp_cc_nn(void) {
     u8 condition = (CPU.opcode >> 3) & 0x03;
-    bool jump;
+    bool jump = false;
 
     switch (condition) {
         case 0: jump = !GET_FLAG_Z; break;    // NZ
@@ -1097,7 +1094,7 @@ static void jr_n(void) {
 // JR cc,n - CONDITIONAL RELATIVE JUMP BY SIGNED IMMEDIATE N
 static void jr_cc_n(void) {
     u8 condition = (CPU.opcode >> 3) & 0x03;
-    bool jump;
+    bool jump = false;
 
     switch (condition) {
         case 0: jump = !GET_FLAG_Z; break;    // NZ
@@ -1137,7 +1134,7 @@ static void call_nn(void) {
 static void call_cc_nn(void) {
     u8 condition = (CPU.opcode >> 3) & 0x03; // EXTRACT CONDITION BITS
     u16 addr = read_word(); // FETCH ABSOLUTE ADDRESS NN
-    bool jump;
+    bool jump = false;
 
     // CHECK CONDITIONS
     switch (condition) {
@@ -1207,7 +1204,7 @@ static void ret(void) {
 // RET cc - CONDITIONAL RETURN FROM SUBROUTINE
 static void ret_cc(void) {
     u8 condition = (CPU.opcode >> 3) & 0x03;
-    bool do_ret;
+    bool do_ret = false;
 
     switch (condition) {
         case 0: do_ret = !GET_FLAG_Z; break; // NZ
@@ -1244,19 +1241,14 @@ static void reti(void) {
 // DAA
 void daa() {
     uint8_t adjust = 0;
-    bool carry_out = false;
+    bool carry_out = GET_FLAG_C;  // PRESERVE C BY DEFAULT (SUBTRACT MODE)
+
     if (GET_FLAG_N) {
-        if (GET_FLAG_H) {
-            adjust |= 0x06;
-        }
-        if (GET_FLAG_C) {
-            adjust |= 0x60;
-        }
+        if (GET_FLAG_H) adjust |= 0x06;
+        if (GET_FLAG_C) adjust |= 0x60;
         CPU.reg.a -= adjust;
     } else {
-        if (GET_FLAG_H || (CPU.reg.a & 0x0F) > 0x09) {
-            adjust |= 0x06;
-        }
+        if (GET_FLAG_H || (CPU.reg.a & 0x0F) > 0x09) adjust |= 0x06;
         if (GET_FLAG_C || CPU.reg.a > 0x99) {
             adjust |= 0x60;
             carry_out = true;
@@ -1267,6 +1259,7 @@ void daa() {
     SET_FLAG_H(false);
     SET_FLAG_Z(CPU.reg.a == 0);
     SET_FLAG_C(carry_out);
+    CPU.cycles = 4;
 }
 
 // TABLE INITIALIZATION ------------------------------------------------------------
@@ -1476,29 +1469,28 @@ void cpu_init(void) {
 
 void cpu_step(void) {
     if (CPU.halted) {
-        return;
+        // ANY PENDING INTERRUPT WAKES HALT REGARDLESS OF IME.
+        // IME ONLY GATES WHETHER THE HANDLER IS SERVICED.
+        if (get_interrupt_flags() & get_interrupt_enable()) {
+            CPU.halted = false;
+        } else {
+            CPU.cycles = 4;  // KEEP TIME ADVANCING WHILE WAITING
+            return;
+        }
     }
 
-    #ifdef DEBUG
-    // FOR PARSED TEST LOGS
+#if LOG_VERBOSE_CPU
+    // FOR PARSED TEST LOGS - VERY EXPENSIVE, ONLY ENABLE WHEN DIFFING TRACES
     u8 mem[4];
     for(int i = 0; i < 4; i++) {
         mem[i] = read_from_bus(CPU.reg.pc + i);
     }
     LOG_TEST("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X",
-        CPU.reg.a,
-        CPU.reg.f,
-        CPU.reg.b,
-        CPU.reg.c,
-        CPU.reg.d,
-        CPU.reg.e,
-        CPU.reg.h,
-        CPU.reg.l,
-        CPU.reg.sp,
-        CPU.reg.pc,
-        mem[0], mem[1], mem[2], mem[3]
-    );
-    #endif
+        CPU.reg.a, CPU.reg.f, CPU.reg.b, CPU.reg.c,
+        CPU.reg.d, CPU.reg.e, CPU.reg.h, CPU.reg.l,
+        CPU.reg.sp, CPU.reg.pc,
+        mem[0], mem[1], mem[2], mem[3]);
+#endif
 
     // SET FLAG FOR IME SCHEDULER
     bool was_scheduled = CPU.ime_scheduled;

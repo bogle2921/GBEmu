@@ -7,9 +7,6 @@
 #include "gameboy.h"
 
 
-// SCREEN CONSTANTS  
-#define SCREEN_WIDTH 160
-#define SCREEN_HEIGHT 144
 #define VRAM_BANK_SIZE 0x2000
 #define OAM_SIZE 0xA0
 #define TILES_PER_LINE 32
@@ -43,9 +40,9 @@ typedef struct {
     bool auto_increment; // PALETTE AUTO INCREMENT
 } cgb_graphics;
 
-typedef struct {
+typedef struct __attribute__((packed)) {
     u8 y;
-    u8 x; 
+    u8 x;
     u8 tile;
     u8 flags;
 } sprite;
@@ -85,6 +82,9 @@ typedef struct {
     u32 frame_buffer[SCREEN_WIDTH * SCREEN_HEIGHT];
     u32 bg_colors[4];
     u32 sprite_colors[2][4];
+
+    // PARALLEL BG INDEX BUFFER (LAYERING SPRITES)
+    u8 bg_index_line[SCREEN_WIDTH];
     
     // SDL
     SDL_Window* window;

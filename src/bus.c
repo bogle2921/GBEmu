@@ -1,5 +1,7 @@
 #include "logger.h"
 #include "bus.h"
+#include "joypad.h"
+#include "apu.h"
 
 // MEMORY MAP
 /*
@@ -9,20 +11,13 @@ CHECK BUS.H HEADER FILE, LET KEEP ALL INDEX/LOCATIONS THERE.
 static struct {
     u8 wram[0x2000];    // WORKING RAM (8KB)
     u8 hram[0x80];      // HIGH RAM (127B)
-    u8 io[0x80];        // IO REGISTERS (127B) 
+    u8 io[0x80];        // IO REGISTERS (127B)
     u8 bootrom[0x100];  // BOOT ROM (256B)
-    
-    // IO PORTS
+
+    // SERIAL PORTS - JOYPAD AND AUDIO OWN THEIR OWN STATE
     struct {
-        u8 joypad;
         u8 serial_data;
         u8 serial_control;
-        u8 nr10, nr11, nr12, nr13, nr14;  // CHANNEL 1  
-        u8 nr21, nr22, nr23, nr24;        // CHANNEL 2
-        u8 nr30, nr31, nr32, nr33, nr34;  // CHANNEL 3 
-        u8 nr41, nr42, nr43, nr44;        // CHANNEL 4
-        u8 nr50, nr51, nr52;              // CONTROL
-        u8 wave_ram[16];                  // WAVE PATTERN RAM
     } ports;
 } bus = {0};
 
@@ -38,7 +33,7 @@ static u8 read_io(u16 addr) {
     // HANDLE ALL IO PORT READS
     switch(addr) {
         // JOYPAD
-        case P1_REG:   return bus.ports.joypad;
+        case P1_REG:   return joypad_read();
         case SB_REG:   return bus.ports.serial_data;
         case SC_REG:   return bus.ports.serial_control;
 
@@ -51,40 +46,10 @@ static u8 read_io(u16 addr) {
         // INTERRUPTS  
         case IF_REG:   return get_interrupt_flags();
 
-        // SOUND CH1
-        case NR10_REG: return bus.ports.nr10;
-        case NR11_REG: return bus.ports.nr11; 
-        case NR12_REG: return bus.ports.nr12;
-        case NR13_REG: return bus.ports.nr13;
-        case NR14_REG: return bus.ports.nr14;
-
-        // SOUND CH2
-        case NR21_REG: return bus.ports.nr21;
-        case NR22_REG: return bus.ports.nr22;
-        case NR23_REG: return bus.ports.nr23;
-        case NR24_REG: return bus.ports.nr24;
-
-        // SOUND CH3
-        case NR30_REG: return bus.ports.nr30;
-        case NR31_REG: return bus.ports.nr31;
-        case NR32_REG: return bus.ports.nr32;
-        case NR33_REG: return bus.ports.nr33;
-        case NR34_REG: return bus.ports.nr34;
-
-        // SOUND CH4
-        case NR41_REG: return bus.ports.nr41;
-        case NR42_REG: return bus.ports.nr42;
-        case NR43_REG: return bus.ports.nr43;
-        case NR44_REG: return bus.ports.nr44;
-
-        // SOUND CTRL
-        case NR50_REG: return bus.ports.nr50;
-        case NR51_REG: return bus.ports.nr51;
-        case NR52_REG: return bus.ports.nr52;
-
-        // WAVE PATTERN RAM
+        // SOUND REGISTERS + WAVE RAM
+        case NR10_REG ... NR52_REG:
         case WAVE_RAM_START ... WAVE_RAM_START + 0xF:
-            return bus.ports.wave_ram[addr - WAVE_RAM_START];
+            return apu_read(addr);
 
         // LCD/PPU
         case LCDC_REG:
@@ -118,7 +83,7 @@ static void write_io(u16 addr, u8 val) {
             break;
 
         // JOYPAD
-        case P1_REG:   bus.ports.joypad = val; break;
+        case P1_REG:   joypad_write(val); break;
         case SB_REG:   bus.ports.serial_data = val; break;
         case SC_REG:   bus.ports.serial_control = val; break;
 
@@ -131,40 +96,10 @@ static void write_io(u16 addr, u8 val) {
         // INTERRUPTS
         case IF_REG:   set_interrupt_flags(val); break;
 
-        // SOUND CH1
-        case NR10_REG: bus.ports.nr10 = val; break;
-        case NR11_REG: bus.ports.nr11 = val; break;
-        case NR12_REG: bus.ports.nr12 = val; break;
-        case NR13_REG: bus.ports.nr13 = val; break;
-        case NR14_REG: bus.ports.nr14 = val; break;
-
-        // SOUND CH2
-        case NR21_REG: bus.ports.nr21 = val; break;
-        case NR22_REG: bus.ports.nr22 = val; break;
-        case NR23_REG: bus.ports.nr23 = val; break;
-        case NR24_REG: bus.ports.nr24 = val; break;
-
-        // SOUND CH3  
-        case NR30_REG: bus.ports.nr30 = val; break;
-        case NR31_REG: bus.ports.nr31 = val; break;
-        case NR32_REG: bus.ports.nr32 = val; break;
-        case NR33_REG: bus.ports.nr33 = val; break;
-        case NR34_REG: bus.ports.nr34 = val; break;
-
-        // SOUND CH4
-        case NR41_REG: bus.ports.nr41 = val; break;
-        case NR42_REG: bus.ports.nr42 = val; break;
-        case NR43_REG: bus.ports.nr43 = val; break;
-        case NR44_REG: bus.ports.nr44 = val; break;
-
-        // SOUND CTRL
-        case NR50_REG: bus.ports.nr50 = val; break;
-        case NR51_REG: bus.ports.nr51 = val; break;
-        case NR52_REG: bus.ports.nr52 = val; break;
-
-        // WAVE PATTERN RAM
+        // SOUND REGISTERS + WAVE RAM
+        case NR10_REG ... NR52_REG:
         case WAVE_RAM_START ... WAVE_RAM_START + 0xF:
-            bus.ports.wave_ram[addr - WAVE_RAM_START] = val;
+            apu_write(addr, val);
             break;
 
         // LCD/PPU

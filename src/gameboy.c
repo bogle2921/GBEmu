@@ -1,5 +1,8 @@
 #include "logger.h"
 #include "gameboy.h"
+#include "joypad.h"
+#include "apu.h"
+#include "cart.h"
 #include <SDL2/SDL.h>
 #include <string.h>
 
@@ -16,19 +19,22 @@ void gameboy_init(bool bootrom_enabled) {
     GB.bootrom_enabled = bootrom_enabled;
 
     // NOTE: DONT TRY TO INIT RAM HERE, IT SHOULD ALREADY BE DONE
-    interrupt_init();  // INTERRUPTS FIRST  
+    interrupt_init();  // INTERRUPTS FIRST
     timer_init();      // THEN OTHER SUBSYSTEMS
     cpu_init();
-    graphics_init();
+    joypad_init();
+    graphics_init();   // ALSO INITS SDL (VIDEO + AUDIO)
+    apu_init();        // NEEDS SDL_INIT_AUDIO
     
     PERF_FREQ = SDL_GetPerformanceFrequency();
     TICKS_PER_FRAME = PERF_FREQ / 60;  // TARGET 60 FPS, THIS IS MUCH BETTER
 }
 
 void gameboy_destroy() {
-    // UNINITIALIZE STUFF HERE
     LOG_DEBUG(LOG_MAIN, "CLEANING UP GAMEBOY MEMORY, GRAPHICS, ETC.\n");
+    apu_cleanup();
     graphics_cleanup();
+    cart_cleanup();    // PERSISTS BATTERY SAVE AND FREES ROM/RAM
 }
 
 void run_gb() {
@@ -41,18 +47,18 @@ void run_gb() {
         // SYNC TO 4194304 CYCLES PER SECOND (59.7275 HZ)
         while (GB.cycles_this_frame < CYCLES_PER_FRAME) {
             if (!GB.paused) {
-                
                 cpu_step();
-                handle_interrupts();
-                
                 u8 cycles = get_cpu_cycles();
+                cycles += handle_interrupts();  // ADDS 20 T-CYCLES IF SERVICED
+
                 GB.cycles_this_frame += cycles;
-                
+
                 // RUN PPU, TIMER, DMA FOR EACH M-CYCLE (4 T-CYCLES)
                 for (int t = 0; t < cycles; t += 4) {
                     timer_tick();
                     dma_tick();
                     graphics_tick();
+                    apu_tick();
                 }
             }
         }

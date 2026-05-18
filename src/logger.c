@@ -19,11 +19,12 @@ typedef struct {
 // SINGLETON
 static LogContext log_contexts[LOG_COUNT];
 
+#if LOG_TO_FILE
 // EACH PART GETS ITS OWN LOG FILE ON ROTATION
 static const char* component_names[] = {
     "main",
     "cpu",
-    "bus", 
+    "bus",
     "graphics",
     "cart",
     "dma",
@@ -65,27 +66,33 @@ static void check_rotate_log(LogComponent component) {
         }
     }
 }
+#endif  // LOG_TO_FILE
 
 // INIT IN MAIN
 void logger_init(LogLevel global_level) {
+#if LOG_TO_FILE
     #ifdef _WIN32
         mkdir(LOG_DIR);
     #else
         mkdir(LOG_DIR, 0777);
     #endif
+#endif
 
-    #ifdef DEBUG
+#if LOG_TO_STDOUT
     printf("INITIALIZING ALL LOGGERS WITH LEVEL: %d\n", global_level);
-    #endif
+#endif
 
     for (int i = 0; i < LOG_COUNT; i++) {
-        char filepath[512];
-        snprintf(filepath, sizeof(filepath), "%s/%s.log", LOG_DIR, component_names[i]);
-
-        log_contexts[i].file = fopen(filepath, "a");
-        strncpy(log_contexts[i].filename, filepath, sizeof(log_contexts[i].filename)-1);
         log_contexts[i].level = global_level;
         log_contexts[i].enabled = true;
+        log_contexts[i].file = NULL;
+
+#if LOG_TO_FILE
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/%s.log", LOG_DIR, component_names[i]);
+        log_contexts[i].file = fopen(filepath, "a");
+        strncpy(log_contexts[i].filename, filepath, sizeof(log_contexts[i].filename)-1);
+#endif
     }
 }
 
@@ -101,9 +108,15 @@ void logger_cleanup(void) {
 
 // DONT USE, USE MACROS, SEE HEADER FILE
 void log_message(LogComponent component, LogLevel level, const char* fmt, ...) {
+#if !(LOG_TO_FILE || LOG_TO_STDOUT)
+    // ALL SINKS DISABLED - SHOULD NEVER BE CALLED (MACROS ARE NO-OPS),
+    // BUT GUARD ANYWAY.
+    (void)component; (void)level; (void)fmt;
+    return;
+#else
     LogContext* ctx = &log_contexts[component];
-    
-    if (!ctx->enabled || level > ctx->level || !ctx->file) {
+
+    if (!ctx->enabled || level > ctx->level) {
         return;
     }
 
@@ -113,9 +126,7 @@ void log_message(LogComponent component, LogLevel level, const char* fmt, ...) {
     vsnprintf(message, sizeof(message), fmt, args);
     va_end(args);
 
-
     if (level != LOG_TEST) {
-
         time_t t = time(NULL);
         struct tm* tm = localtime(&t);
         char timestamp[32];
@@ -128,18 +139,27 @@ void log_message(LogComponent component, LogLevel level, const char* fmt, ...) {
             case LOG_INFO:  level_str = "INFO"; break;
             case LOG_DEBUG: level_str = "DEBUG"; break;
             case LOG_TRACE: level_str = "TRACE"; break;
+            case LOG_TEST:  break;  // HANDLED BELOW
         }
 
-        #ifdef DEBUG
+    #if LOG_TO_STDOUT
         printf("[%s][%s] %s\n", timestamp, level_str, message);
-        #endif
-        
-        fprintf(ctx->file, "[%s][%s] %s\n", timestamp, level_str, message);
-        fflush(ctx->file);
-        check_rotate_log(component);
+    #endif
+    #if LOG_TO_FILE
+        if (ctx->file) {
+            fprintf(ctx->file, "[%s][%s] %s\n", timestamp, level_str, message);
+            fflush(ctx->file);
+            check_rotate_log(component);
+        }
+    #endif
     } else {
-        fprintf(ctx->file, "%s\n", message);
-        fflush(ctx->file);
+    #if LOG_TO_FILE
+        if (ctx->file) {
+            fprintf(ctx->file, "%s\n", message);
+            fflush(ctx->file);
+        }
+    #endif
     }
+#endif
 }
 

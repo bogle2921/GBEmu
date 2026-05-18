@@ -2,6 +2,7 @@
 #include "graphics.h"
 #include "interrupt.h"
 #include "bus.h"
+#include "joypad.h"
 
 static graphics_system graphics;
 
@@ -48,6 +49,7 @@ void graphics_cleanup() {
     SDL_Quit();
 }
 
+#if DEBUG_WINDOW
 static u8 get_tile_pixel(u8 tile_idx, u8 x, u8 y) {
     u16 tile_addr = (tile_idx * 16) + (y * 2);  // CALCULATE ADDRESS OF TILE DATA
     
@@ -61,6 +63,7 @@ static u8 get_tile_pixel(u8 tile_idx, u8 x, u8 y) {
     // COMBINE BITS TO GET COLOR INDEX
     return ((byte2 >> bit_pos) & 1) << 1 | ((byte1 >> bit_pos) & 1);
 }
+#endif
 
 // RENDER BACKGROUND AND WINDOW
 static void render_background_line() {
@@ -104,16 +107,23 @@ static void render_background_line() {
             const u8 bit_pos = 7 - tile_x_offset;
             const u8 color_idx = ((high_byte >> bit_pos) & 1) << 1 | ((low_byte >> bit_pos) & 1);
 
-            // WRITE PIXEL TO FRAME BUFFER
+            // WRITE PIXEL TO FRAME BUFFER + REMEMBER BG INDEX FOR SPRITE PRIORITY
             graphics.frame_buffer[(graphics.line * SCREEN_WIDTH) + screen_x] = graphics.bg_colors[color_idx];
+            graphics.bg_index_line[screen_x] = color_idx;
         }
+    } else {
+        // BG DISABLED -> ALL PIXELS COUNT AS COLOR 0 FOR PRIORITY
+        for (int x = 0; x < SCREEN_WIDTH; x++) graphics.bg_index_line[x] = 0;
     }
 
     // RENDER WINDOW IF ENABLED AND WITHIN Y-BOUNDS
-    if ((graphics.lcdc & LCDC_WINDOW_ENABLE) && graphics.wy <= graphics.line) {
-        const u8 window_y = graphics.line - graphics.wy; // CURRENT Y IN WIN MAP
-        const u8 tile_row = window_y / 8;  // CURRENT ROW IN TILE MAP
-        const u8 tile_y_offset = window_y % 8; // CURRENT Y OFFSET IN TILE
+    if ((graphics.lcdc & LCDC_WINDOW_ENABLE) && graphics.wy <= graphics.line && graphics.wx < 167) {
+        // WINDOW HAS ITS OWN INTERNAL LINE COUNTER THAT ONLY ADVANCES
+        // ON SCANLINES THE WINDOW ACTUALLY RENDERED.
+        const u8 window_y = graphics.window_line;
+        const u8 tile_row = window_y / 8;
+        const u8 tile_y_offset = window_y % 8;
+        graphics.window_line++;
 
         // PREPARE MAP ADDRESS
         const u16 window_map_base = BG_MAP_ADDRESSES[(graphics.lcdc & LCDC_WINDOW_MAP) >> 6];
@@ -145,128 +155,88 @@ static void render_background_line() {
             const u8 bit_pos = 7 - tile_x_offset;
             const u8 color_idx = ((high_byte >> bit_pos) & 1) << 1 | ((low_byte >> bit_pos) & 1);
 
-            // WRITE PIXEL TO FRAME BUFFER
+            // WRITE PIXEL TO FRAME BUFFER + UPDATE BG INDEX
             graphics.frame_buffer[(graphics.line * SCREEN_WIDTH) + screen_x] = graphics.bg_colors[color_idx];
+            graphics.bg_index_line[screen_x] = color_idx;
         }
     }
 }
 
-// SORT SPRITES BY X-COORDINATE FOR DRAWING PRIORITY
-static void sort_sprites_by_x(const sprite* source, sprite* dest, int sprite_count) {
-    // COPY SOURCE TO DESTINATION ARRAY
-    memcpy(dest, source, sizeof(sprite) * sprite_count);
-
-    // BUBBLE SORT BY X-COORDINATE (ASCENDING)
-    for (int i = 0; i < sprite_count - 1; i++) {
-        for (int j = 0; j < sprite_count - i - 1; j++) {
-            if (dest[j].x > dest[j + 1].x) {
-                sprite temp = dest[j];
-                dest[j] = dest[j + 1];
-                dest[j + 1] = temp;
-            }
-        }
-    }
-}
-
-// RENDER SPRITES FOR THE CURRENT SCANLINE
+// RENDER SPRITES FOR THE CURRENT SCANLINE.
+// DMG RULES:
+//   1) AT MOST 10 SPRITES PER SCANLINE - PICKED IN OAM ORDER, NOT BY X.
+//   2) LOWER X DRAWS ON TOP OF HIGHER X. WITHIN EQUAL X, LOWER OAM INDEX WINS.
+//   3) IF SPRITE FLAG BIT 7 (BG PRIORITY) IS SET, THE SPRITE IS HIDDEN
+//      WHEREVER THE BG COLOR INDEX IS NON-ZERO.
 static void render_sprites_line() {
-    // EXIT EARLY IF SPRITES ARE DISABLED
     if (!(graphics.lcdc & LCDC_OBJ_ENABLE)) return;
 
-    // DETERMINE SPRITE HEIGHT (8 OR 16 PIXELS)
     const u8 sprite_height = (graphics.lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
-    
-    // COUNTER FOR VISIBLE SPRITES ON THE CURRENT LINE
+
+    // STEP 1: PICK FIRST 10 VISIBLE SPRITES IN OAM ORDER
+    sprite line_sprites[SPRITES_PER_LINE];
     int sprite_count = 0;
-    
-    // TEMPORARY ARRAY FOR SPRITES
-    sprite temp_sprites[MAX_SPRITES];
 
-    // ITERATE OVER ALL SPRITES TO FIND VISIBLE ONES
-    for (int i = 0; i < MAX_SPRITES; i++) {
-        // CALCULATE SPRITE Y-POSITION ON SCREEN
+    for (int i = 0; i < MAX_SPRITES && sprite_count < SPRITES_PER_LINE; i++) {
         const int sprite_y = graphics.oam[i].y - 16;
-
-        // CHECK IF SPRITE IS VISIBLE ON THE CURRENT LINE + X BOUNDS
-        if (graphics.line >= sprite_y && 
-            graphics.line < sprite_y + sprite_height &&
-            graphics.oam[i].x > 0 && 
-            graphics.oam[i].x < SCREEN_WIDTH + 8) {
-            
-            // STORE SPRITE IF VISIBLE
-            temp_sprites[sprite_count++] = graphics.oam[i];
+        if (graphics.line >= sprite_y && graphics.line < sprite_y + sprite_height) {
+            line_sprites[sprite_count++] = graphics.oam[i];
         }
     }
 
-    // SORT SPRITES BY X-COORDINATE FOR CORRECT DRAWING PRIORITY
-    sort_sprites_by_x(temp_sprites, temp_sprites, sprite_count);
+    // STEP 2: STABLE-SORT ASCENDING BY X SO WE CAN ITERATE IN REVERSE BELOW.
+    // STABLE SORT PRESERVES OAM ORDER WHEN X IS EQUAL, AND DRAWING IN REVERSE
+    // MEANS LOWER OAM INDEX (DRAWN LAST AMONG EQUAL-X) ENDS UP ON TOP.
+    for (int i = 1; i < sprite_count; i++) {
+        sprite key = line_sprites[i];
+        int j = i - 1;
+        while (j >= 0 && line_sprites[j].x > key.x) {
+            line_sprites[j + 1] = line_sprites[j];
+            j--;
+        }
+        line_sprites[j + 1] = key;
+    }
 
-    // LIMIT TO 10 SPRITES PER LINE
-    const int max_sprites_per_line = (sprite_count > SPRITES_PER_LINE) ? SPRITES_PER_LINE : sprite_count;
+    // STEP 3: DRAW HIGHEST-X FIRST, LOWEST-X LAST (LOWEST X ENDS UP ON TOP)
+    for (int i = sprite_count - 1; i >= 0; i--) {
+        const sprite* s = &line_sprites[i];
+        const int sprite_x = (int)s->x - 8;
 
-    // ITERATE OVER VISIBLE SPRITES AND DRAW THEM
-    for (int i = 0; i < max_sprites_per_line; i++) {
-        const sprite* s = &temp_sprites[i];
+        if (s->x == 0 || sprite_x >= SCREEN_WIDTH) continue;
 
-        // CALCULATE SPRITE X-POSITION ON SCREEN
-        const int sprite_x = s->x - 8;
-
-        // SKIP OFF-SCREEN OR HIDDEN SPRITES
-        if (sprite_x < -7 || sprite_x >= SCREEN_WIDTH) continue;
-
-        // DETERMINE Y-FLIP AND SELECT CORRECT PALETTE
         const bool y_flip = (s->flags & 0x40) != 0;
         const u8 palette = (s->flags & 0x10) ? 1 : 0;
+        const bool bg_priority = (s->flags & 0x80) != 0;
 
-        // CALCULATE CURRENT LINE WITHIN THE SPRITE
-        u8 sprite_line = graphics.line - (s->y - 16);
-        if (y_flip) {
-            sprite_line = (sprite_height - 1) - sprite_line;
-        }
+        u8 sprite_line = (u8)((int)graphics.line - ((int)s->y - 16));
+        if (y_flip) sprite_line = (sprite_height - 1) - sprite_line;
 
-        // ADJUST TILE INDEX FOR 8X16 MODE
         u8 tile_index = s->tile;
         if (sprite_height == 16) {
-            tile_index &= 0xFE; // USE EVEN TILE INDEX
+            tile_index &= 0xFE;            // EVEN TILE BASE
             if (sprite_line >= 8) {
-                tile_index++; // USE NEXT TILE FOR LOWER HALF
+                tile_index++;              // BOTTOM HALF -> NEXT TILE
                 sprite_line -= 8;
             }
         }
 
-        // CALCULATE TILE DATA ADDRESS
         const u16 tile_data_address = VRAM_START + (tile_index * 16) + (sprite_line * 2);
-
-        // READ TILE DATA BYTES
-        const u8 low_byte = read_from_bus(tile_data_address);
+        const u8 low_byte  = read_from_bus(tile_data_address);
         const u8 high_byte = read_from_bus(tile_data_address + 1);
 
-        // ITERATE OVER PIXELS IN THE CURRENT SPRITE LINE
         for (int px = 0; px < 8; px++) {
-            // CALCULATE X-COORDINATE ON SCREEN
             const int screen_x = sprite_x + px;
-
-            // SKIP PIXELS OUTSIDE OF SCREEN BOUNDS
             if (screen_x < 0 || screen_x >= SCREEN_WIDTH) continue;
 
-            // DETERMINE X-FLIP + COLOR INDEX FROM TILE DATA
             const u8 bit_pos = (s->flags & 0x20) ? px : (7 - px);
             const u8 color_idx = (((high_byte >> bit_pos) & 1) << 1) | ((low_byte >> bit_pos) & 1);
+            if (color_idx == 0) continue;  // SPRITE-TRANSPARENT
 
-            // SKIP TRANSPARENT PIXELS (COLOR INDEX 0)
-            if (color_idx == 0) continue;
+            // BG PRIORITY: SPRITE HIDDEN WHERE BG INDEX IS 1..3
+            if (bg_priority && graphics.bg_index_line[screen_x] != 0) continue;
 
-            // CALCULATE FRAME BUFFER INDEX
             const int fb_index = (graphics.line * SCREEN_WIDTH) + screen_x;
-
-            // PRIORITY CHECK HANDLING
-            const bool bg_priority = (s->flags & 0x80) != 0;
-            const u32 current_color = graphics.frame_buffer[fb_index];
-
-            // DRAW PIXEL IF IT PASSES PRIORITY CHECK
-            if (!bg_priority || current_color == graphics.bg_colors[0]) {
-                graphics.frame_buffer[fb_index] = graphics.sprite_colors[palette][color_idx];
-            }
+            graphics.frame_buffer[fb_index] = graphics.sprite_colors[palette][color_idx];
         }
     }
 }
@@ -276,7 +246,10 @@ void render_line() {
     // EXIT EARLY IF LCD IS DISABLED OR LINE IS INVALID
     if (!(graphics.lcdc & LCDC_ENABLE)) {
         const int fb_start = graphics.line * SCREEN_WIDTH;
-        memset(&graphics.frame_buffer[fb_start], 0xFF, SCREEN_WIDTH * sizeof(u32));
+        const u32 white = graphics.bg_colors[0];
+        for (int x = 0; x < SCREEN_WIDTH; x++) {
+            graphics.frame_buffer[fb_start + x] = white;
+        }
         return;
     }
     
@@ -293,9 +266,11 @@ void render_line() {
 }
 
 void draw_frame() {
-    // FRAME COUNTER
+#if DEBUG_WINDOW
+    // FRAME COUNTER FOR DEBUG WINDOW PACING
     static int frame_count = 0;
     frame_count++;
+#endif
 
     // CLEAR RENDERER WITH WHITE BACKGROUND FOR EMPTY AREAS
     SDL_SetRenderDrawColor(graphics.renderer, 255, 255, 255, 255);
@@ -321,15 +296,17 @@ void draw_frame() {
     // PRESENT RENDERER TO THE WINDOW
     SDL_RenderPresent(graphics.renderer);
 
+#if DEBUG_WINDOW
     // PERIODICALLY UPDATE DEBUG WINDOW
     if (frame_count % 30 == 0) {
         update_debug_window();
     }
+#endif
 }
 
 void graphics_init() {
     // INIT SDL WITH ERROR CHECKING
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         LOG_ERROR(LOG_GRAPHICS, "SDL INIT FAILED: %s\n", SDL_GetError());
         exit(1);
     }
@@ -417,13 +394,14 @@ void graphics_init() {
         exit(1);
     }
 
-    // DEBUG WINDOW SETUP
+#if DEBUG_WINDOW
+    // DEBUG WINDOW SETUP - TILE ATLAS VIEWER
     int main_x, main_y, main_w, main_h;
     SDL_GetWindowPosition(graphics.window, &main_x, &main_y);
     SDL_GetWindowSize(graphics.window, &main_w, &main_h);
-    
+
     graphics.debug_window = SDL_CreateWindow(
-        "DEBUGDEEZ NUTZ",
+        "GBEmu - Tile Atlas",
         main_x + main_w + 10,
         main_y,
         256 * 2,
@@ -442,7 +420,7 @@ void graphics_init() {
 
     graphics.debug_renderer = SDL_CreateRenderer(graphics.debug_window, -1,
         SDL_RENDERER_ACCELERATED);
-        
+
     if (!graphics.debug_renderer) {
         LOG_ERROR(LOG_GRAPHICS, "DEBUG RENDERER CREATE FAILED: %s\n", SDL_GetError());
         SDL_DestroyWindow(graphics.debug_window);
@@ -470,8 +448,9 @@ void graphics_init() {
         SDL_Quit();
         exit(1);
     }
+#endif
 
-    LOG_ERROR(LOG_GRAPHICS, "GRAPHICS INIT COMPLETE - VIDEO MODE: %s\n", SDL_GetCurrentVideoDriver());
+    LOG_INFO(LOG_GRAPHICS, "GRAPHICS INIT COMPLETE - VIDEO MODE: %s\n", SDL_GetCurrentVideoDriver());
     dump_frame_buffer_sample();
 }
 
@@ -480,12 +459,16 @@ void graphics_tick() {
         // FILL FRAME BUFFER WITH WHITE IF WE HAVEN'T ALREADY
         static bool cleared = false;
         if (!cleared) {
-            memset(graphics.frame_buffer, 0xFF, sizeof(graphics.frame_buffer));
+            const u32 white = graphics.bg_colors[0];
+            for (size_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
+                graphics.frame_buffer[i] = white;
+            }
             cleared = true;
         }
         // RESET PPU STATE
         graphics.line = 0;
         graphics.ly = 0;
+        graphics.window_line = 0;
         graphics.mode = MODE_HBLANK;
         graphics.stat &= ~0x03;
         graphics.mode_clock = 0;
@@ -562,23 +545,61 @@ void graphics_tick() {
     }
 }
 
+// KEY -> GB BUTTON MAPPING IS CONFIGURED IN include/config.h
+// EACH GB BUTTON HAS A PRIMARY AND ALTERNATE KEY. UNASSIGNED SLOTS USE
+// SDLK_UNKNOWN AND ARE IGNORED HERE.
+static gb_button key_to_button(SDL_Keycode k) {
+    if (k == SDLK_UNKNOWN) return (gb_button)0;
+
+    if (k == KEY_GB_RIGHT_PRI  || k == KEY_GB_RIGHT_ALT)  return BTN_RIGHT;
+    if (k == KEY_GB_LEFT_PRI   || k == KEY_GB_LEFT_ALT)   return BTN_LEFT;
+    if (k == KEY_GB_UP_PRI     || k == KEY_GB_UP_ALT)     return BTN_UP;
+    if (k == KEY_GB_DOWN_PRI   || k == KEY_GB_DOWN_ALT)   return BTN_DOWN;
+    if (k == KEY_GB_A_PRI      || k == KEY_GB_A_ALT)      return BTN_A;
+    if (k == KEY_GB_B_PRI      || k == KEY_GB_B_ALT)      return BTN_B;
+    if (k == KEY_GB_SELECT_PRI || k == KEY_GB_SELECT_ALT) return BTN_SELECT;
+    if (k == KEY_GB_START_PRI  || k == KEY_GB_START_ALT)  return BTN_START;
+    return (gb_button)0;
+}
+
 void handle_events() {
     SDL_Event event;
-    while (SDL_PollEvent(&event)) 
+    while (SDL_PollEvent(&event))
     {
-        switch (event.type) 
+        switch (event.type)
         {
             case SDL_QUIT:
                 get_gb()->die = true;
                 break;
 
+            case SDL_KEYDOWN:
+                if (event.key.repeat) break;  // IGNORE OS KEY-REPEAT
+                if (event.key.keysym.sym == KEY_GB_QUIT) {
+                    get_gb()->die = true;
+                    break;
+                }
+                {
+                    gb_button b = key_to_button(event.key.keysym.sym);
+                    if (b) joypad_press(b);
+                }
+                break;
+
+            case SDL_KEYUP:
+                {
+                    gb_button b = key_to_button(event.key.keysym.sym);
+                    if (b) joypad_release(b);
+                }
+                break;
+
             case SDL_WINDOWEVENT:
                 if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
-                    // DISTINGUISH DEBUG VS MAIN WINDOW
+#if DEBUG_WINDOW
+                    // CLOSING THE DEBUG WINDOW JUST HIDES IT
                     if (event.window.windowID == SDL_GetWindowID(graphics.debug_window)) {
                         SDL_HideWindow(graphics.debug_window);
-                    } 
-                    else if (event.window.windowID == SDL_GetWindowID(graphics.window)) {
+                    } else
+#endif
+                    if (event.window.windowID == SDL_GetWindowID(graphics.window)) {
                         get_gb()->die = true;
                     }
                 }
@@ -633,10 +654,14 @@ void lcd_write(u16 addr, u8 val) {
             if (!(val & LCDC_ENABLE)) {
                 graphics.line = 0;
                 graphics.ly = 0;
+                graphics.window_line = 0;
                 graphics.mode = MODE_HBLANK;
                 graphics.mode_clock = 0;
                 graphics.stat &= ~0x03;
-                memset(graphics.frame_buffer, 0xFF, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
+                const u32 white = graphics.bg_colors[0];
+                for (size_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
+                    graphics.frame_buffer[i] = white;
+                }
             }
             break;
         }
@@ -701,6 +726,10 @@ void lcd_write(u16 addr, u8 val) {
 }
 
 void update_debug_window() {
+#if !DEBUG_WINDOW
+    // COMPILED OUT WHEN DEBUG_WINDOW=0 IN config.h
+    return;
+#else
     static u32 debug_buffer[256 * 256];
     static int frame_count = 0;
     frame_count++;
@@ -753,6 +782,7 @@ void update_debug_window() {
     if (frame_count % 60 == 0) {
         LOG_TRACE(LOG_GRAPHICS, "Updated debug window frame %d\n", frame_count);
     }
+#endif
 }
 
 void dump_frame_buffer_sample() {
