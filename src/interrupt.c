@@ -18,58 +18,35 @@ void interrupt_req(interrupts i) {
     interrupt.flags |= i;
 }
 
-void handle_interrupts() {
-    if (!get_ime()) {
-        return;
-    }
-
+u8 handle_interrupts() {
     u8 active = interrupt.flags & interrupt.enable;
-    if (!active) return;
+    if (!active) return 0;
+
+    // ANY PENDING INTERRUPT WAKES HALT REGARDLESS OF IME
+    set_cpu_halted(false);
+
+    // BUT THE HANDLER ONLY DISPATCHES WHEN IME IS SET
+    if (!get_ime()) return 0;
 
     registers* reg = get_registers();
+    u16 vector = 0;
+    u8 which = 0;
 
-    // HANDLE ONE INTERRUPT AT A TIME IN PRIORITY ORDER
-    // I DONT THINK WE ARE DOING THIS RIGHT, TOO AGGRESSIVE
-    if (active & INT_VBLANK) {
-        interrupt.flags &= ~INT_VBLANK;
-        LOG_INFO(LOG_INTERRUPT, "!! -- VBLANK INTERRUPT -- !!\n");
-        set_ime(false);
-        stack_push16(reg->pc);
-        reg->pc = 0x40;
-        set_cpu_halted(false);
-    }
-    else if (active & INT_LCD) {
-        interrupt.flags &= ~INT_LCD;
-        LOG_INFO(LOG_INTERRUPT, "!! -- LCD INTERRUPT -- !!\n");
-        set_ime(false);
-        stack_push16(reg->pc);
-        reg->pc = 0x48;
-        set_cpu_halted(false);
-    }
-    else if (active & INT_TIMER) {
-        interrupt.flags &= ~INT_TIMER;
-        LOG_INFO(LOG_INTERRUPT, "!! -- TIMER INTERRUPT -- !!\n");
-        set_ime(false);
-        stack_push16(reg->pc);
-        reg->pc = 0x50;
-        set_cpu_halted(false);
-    }
-    else if (active & INT_SERIAL) {
-        interrupt.flags &= ~INT_SERIAL;
-        LOG_INFO(LOG_INTERRUPT, "!! -- SERIAL INTERRUPT -- !!\n");
-        set_ime(false);
-        stack_push16(reg->pc);
-        reg->pc = 0x58;
-        set_cpu_halted(false);
-    }
-    else if (active & INT_JOYPAD) {
-        interrupt.flags &= ~INT_JOYPAD;
-        LOG_INFO(LOG_INTERRUPT, "!! -- JOYPAD INTERRUPT -- !!\n");
-        set_ime(false);
-        stack_push16(reg->pc);
-        reg->pc = 0x60;
-        set_cpu_halted(false);
-    }
+    // PRIORITY ORDER: VBLANK > LCD > TIMER > SERIAL > JOYPAD
+    if      (active & INT_VBLANK) { which = INT_VBLANK; vector = 0x40; }
+    else if (active & INT_LCD)    { which = INT_LCD;    vector = 0x48; }
+    else if (active & INT_TIMER)  { which = INT_TIMER;  vector = 0x50; }
+    else if (active & INT_SERIAL) { which = INT_SERIAL; vector = 0x58; }
+    else if (active & INT_JOYPAD) { which = INT_JOYPAD; vector = 0x60; }
+    else return 0;
+
+    interrupt.flags &= ~which;
+    set_ime(false);
+    stack_push16(reg->pc);
+    reg->pc = vector;
+
+    // ISR DISPATCH IS 5 M-CYCLES = 20 T-CYCLES
+    return 20;
 }
 
 u8 get_interrupt_flags() {

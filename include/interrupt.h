@@ -14,7 +14,7 @@ typedef enum {
 
 void interrupt_init();
 void interrupt_req(interrupts i);
-void handle_interrupts();
+u8 handle_interrupts();  // RETURNS T-CYCLES CONSUMED BY ISR DISPATCH (0 OR 20)
 u8 get_interrupt_flags();
 void set_interrupt_flags(u8 flags);
 u8 get_interrupt_enable();

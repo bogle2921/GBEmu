@@ -97,6 +97,9 @@ bool load_bootrom(const char* bootrom);
 bool save_battery(void);
 bool load_battery(void);
 
+// FREES ROM/RAM AND PERSISTS BATTERY-BACKED SAVE
+void cart_cleanup(void);
+
 // GETTERS/SETTERS
 // get_cart_mode(void);
 

@@ -1,6 +1,7 @@
 #include "logger.h"
 #include "dma.h"
 #include "bus.h"
+#include "graphics.h"
 
 static struct dma DMA = {0};
 
@@ -21,10 +22,10 @@ void dma_tick() {
         return;
     }
 
-    // TRANSFER ONE BYTE FROM SOURCE TO OAM
+    // TRANSFER ONE BYTE FROM SOURCE TO OAM DIRECTLY (BUS READ + OAM WRITE)
     u16 source = (DMA.val << 8) + DMA.byte;
-    write_to_bus(OAM_START + DMA.byte, read_from_bus(source));
-    
+    oam_write(OAM_START + DMA.byte, read_from_bus(source));
+
     DMA.byte++;
     DMA.isActive = DMA.byte < 0xA0;  // 160 BYTES TOTAL
 }
