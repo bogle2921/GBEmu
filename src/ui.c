@@ -392,19 +392,20 @@ static void apply_theme(void) {
     s->window.header.minimize_symbol  = NK_SYMBOL_MINUS;
     s->window.header.maximize_symbol  = NK_SYMBOL_PLUS;
 
-    s->window.header.close_button.normal  = nk_style_item_color(bezel);
-    s->window.header.close_button.hover   = nk_style_item_color((struct nk_color){0xc8,0x30,0x30,0xff});
-    s->window.header.close_button.active  = nk_style_item_color((struct nk_color){0x80,0x20,0x20,0xff});
+    // SMALL PADDING SO THE GLYPH ISN'T CLIPPED
+    s->window.header.close_button.normal  = nk_style_item_color((struct nk_color){0x9c,0x3a,0x4a,0xff});
+    s->window.header.close_button.hover   = nk_style_item_color((struct nk_color){0xe6,0x4c,0x52,0xff});
+    s->window.header.close_button.active  = nk_style_item_color((struct nk_color){0x70,0x24,0x2e,0xff});
     s->window.header.close_button.border_color  = shell_lo;
-    s->window.header.close_button.text_background = bezel;
+    s->window.header.close_button.text_background = (struct nk_color){0x9c,0x3a,0x4a,0xff};
     s->window.header.close_button.text_normal = (struct nk_color){0xff,0xff,0xff,0xff};
     s->window.header.close_button.text_hover  = (struct nk_color){0xff,0xff,0xff,0xff};
     s->window.header.close_button.text_active = (struct nk_color){0xff,0xff,0xff,0xff};
     s->window.header.close_button.text_alignment = NK_TEXT_CENTERED;
     s->window.header.close_button.border = 0;
     s->window.header.close_button.rounding = WIDGET_ROUNDING;
-    s->window.header.close_button.padding = nk_vec2(5, 5);
-    s->window.header.close_button.touch_padding = nk_vec2(3, 3);
+    s->window.header.close_button.padding = nk_vec2(2, 2);
+    s->window.header.close_button.touch_padding = nk_vec2(4, 4);
     s->window.header.minimize_button = s->window.header.close_button;
     s->window.header.minimize_button.hover = nk_style_item_color(accent);
     s->window.header.minimize_button.active = nk_style_item_color(accent_lo);
@@ -669,10 +670,14 @@ static void ui_shadow_add(struct nk_rect b) {
     g_shadow_rects[g_shadow_count++] = rc;
 }
 
+// SHADOWS FIRST, THEN OPAQUE
 void ui_draw_shadows(SDL_Renderer* r) {
     if (!ui_initialized) return;
     for (int i = 0; i < g_shadow_count; i++)
         draw_soft_shadow(r, g_shadow_rects[i], (int)WIN_ROUNDING);
+    struct nk_color shell = T()->shell;
+    for (int i = 0; i < g_shadow_count; i++)
+        fill_round_rect(r, g_shadow_rects[i], (int)WIN_ROUNDING, shell);
 }
 
 // CASE MATERIAL PASSES
@@ -1385,6 +1390,7 @@ static void draw_dropdown(int menu_idx) {
     // NUKLEAR KEEPS OLD BOUNDS FORCE RESIZE EVERY FRAME
     nk_window_show(ctx, name, NK_SHOWN);
     nk_window_set_bounds(ctx, name, dropdown_bounds);
+    nk_window_set_focus(ctx, name);
 
     if (nk_begin(ctx, name, dropdown_bounds,
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BORDER | NK_WINDOW_DYNAMIC)) {
@@ -1506,7 +1512,6 @@ static void maybe_reset_panel(PanelId id, struct nk_rect rect) {
 // CALL JUST INSIDE nk_begin: QUEUE THE DROP SHADOW + KEEP THE ESC STACK
 // ORDERED SO THE FOCUSED PANEL IS ALWAYS THE ONE ESC CLOSES FIRST
 static void panel_frame_begin(PanelId id) {
-    ui_shadow_add(nk_window_get_bounds(ctx));
     if (nk_window_is_active(ctx, panels[id].title)) panel_z_raise(id);
 }
 
@@ -1911,6 +1916,14 @@ void ui_new_frame(void) {
     if (panels[PANEL_MEM].open)   draw_mem_window();
     if (panels[PANEL_FILE].open)  draw_file_browser();
     if (panels[PANEL_ABOUT].open) draw_about_window();
+
+    // CAPTURE FINAL (CONTENT-FITTED) PANEL BOUNDS FOR SHADOWS + BACKINGS
+    for (int i = 0; i < PANEL_COUNT; i++) {
+        if (!panels[i].open) continue;
+        struct nk_window* w = nk_window_find(ctx, panels[i].title);
+        if (w && !(w->flags & (NK_WINDOW_HIDDEN | NK_WINDOW_CLOSED)))
+            ui_shadow_add(w->bounds);
+    }
 }
 
 void ui_render(void) {
