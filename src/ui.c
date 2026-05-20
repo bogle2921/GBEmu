@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #define MENU_H            28
 #define MENU_BEVEL         2
@@ -33,18 +34,22 @@
 
 #define MENUBAR_PAD_X      4
 #define MENUBAR_PAD_Y      0
-#define MENUBAR_SPACING    2
+#define MENUBAR_SPACING    3
 
-#define PANEL_PAD          8
-#define PANEL_SPACING      4
+#define PANEL_PAD         10
+#define PANEL_SPACING      6
 #define ROW_H_LBL         18
 #define ROW_H_CTL         24
 #define ROW_H_HEX         16
 #define BORDER_W           2
 
+#define WIN_ROUNDING       7.0f
+#define BTN_ROUNDING       5.0f
+#define WIDGET_ROUNDING    4.0f
+
 #define DEFAULT_GB_SCALE   5
-#define DEFAULT_PAD_X     20
-#define DEFAULT_PAD_BOT   28
+#define DEFAULT_PAD_X     22
+#define DEFAULT_PAD_BOT   34
 
 // MENU LAYOUT TABLE
 typedef struct { const char* label; float width; } MenuSpec;
@@ -88,46 +93,36 @@ typedef struct {
 #define C(r,g,b) {(r),(g),(b),255}
 
 static const Theme THEMES[] = {
-    {"DMG",
-     C(0xa8,0xa9,0x9a), C(0xc4,0xc4,0xb4), C(0x5a,0x5a,0x50),
-     C(0x18,0x18,0x10), C(0x9b,0xbc,0x0f), C(0xc0,0x40,0x70),
-     C(0x18,0x18,0x18), C(0x4e,0x4e,0x46),
-     C(0x0f,0x38,0x0f), C(0x30,0x62,0x30)},
     {"Atomic",
      C(0x8c,0x68,0xc8), C(0xb4,0x92,0xe0), C(0x40,0x24,0x6c),
      C(0x12,0x08,0x24), C(0xc8,0xae,0xe8), C(0xe6,0x4a,0x80),
      C(0xf4,0xee,0xff), C(0xd6,0xc4,0xee),
      C(0x22,0x10,0x4a), C(0x52,0x36,0x86)},
-    {"Berry",
-     C(0xd8,0x4a,0x84), C(0xee,0x80,0xa8), C(0x6a,0x18,0x40),
-     C(0x22,0x08,0x18), C(0xff,0xc8,0xd8), C(0xc0,0x90,0x18),
-     C(0xff,0xff,0xff), C(0xff,0xc0,0xd0),
-     C(0x4a,0x0c,0x28), C(0x82,0x2a,0x52)},
     {"Grape",
      C(0x5a,0x3c,0xae), C(0x82,0x66,0xd6), C(0x22,0x14,0x60),
      C(0x0c,0x04,0x24), C(0xc8,0xb4,0xf0), C(0xff,0xc4,0x40),
      C(0xff,0xff,0xff), C(0xc8,0xb4,0xf0),
      C(0x22,0x14,0x60), C(0x4a,0x32,0x96)},
-    {"Dandelion",
-     C(0xf6,0xc6,0x1c), C(0xff,0xe2,0x6a), C(0x8a,0x5c,0x00),
-     C(0x2a,0x18,0x00), C(0xff,0xee,0xa0), C(0xb6,0x36,0x0a),
-     C(0x2c,0x1c,0x00), C(0x70,0x4a,0x00),
-     C(0x4a,0x30,0x00), C(0x80,0x56,0x00)},
-    {"Kiwi",
-     C(0x82,0xc6,0x28), C(0xb6,0xe0,0x5a), C(0x3a,0x60,0x08),
-     C(0x10,0x20,0x00), C(0xdc,0xf6,0x96), C(0xc8,0x46,0x10),
-     C(0x14,0x2c,0x00), C(0x3a,0x60,0x08),
-     C(0x14,0x30,0x06), C(0x3e,0x66,0x18)},
+    {"Cosmo",
+     C(0x4c,0x36,0x86), C(0x76,0x5e,0xb8), C(0x1c,0x10,0x3c),
+     C(0x06,0x02,0x18), C(0xb8,0xa0,0xdc), C(0xff,0xd2,0x4a),
+     C(0xff,0xff,0xff), C(0xc8,0xb4,0xea),
+     C(0x1a,0x0a,0x42), C(0x42,0x2a,0x80)},
+    {"Berry",
+     C(0xd8,0x4a,0x84), C(0xee,0x80,0xa8), C(0x6a,0x18,0x40),
+     C(0x22,0x08,0x18), C(0xff,0xc8,0xd8), C(0xc0,0x90,0x18),
+     C(0xff,0xff,0xff), C(0xff,0xc0,0xd0),
+     C(0x4a,0x0c,0x28), C(0x82,0x2a,0x52)},
     {"Mint",
      C(0xb0,0xe8,0xc8), C(0xd6,0xf6,0xe2), C(0x40,0x80,0x66),
      C(0x10,0x2a,0x1e), C(0xe6,0xfa,0xea), C(0xb0,0x36,0x4a),
      C(0x08,0x30,0x20), C(0x2e,0x66,0x4a),
      C(0x06,0x36,0x22), C(0x2a,0x60,0x4a)},
-    {"Silver",
-     C(0xc2,0xc2,0xca), C(0xe2,0xe2,0xea), C(0x55,0x55,0x5e),
-     C(0x18,0x18,0x1e), C(0xee,0xee,0xf2), C(0x8a,0x18,0x36),
-     C(0x14,0x14,0x1c), C(0x44,0x44,0x4e),
-     C(0x16,0x16,0x1c), C(0x4a,0x4a,0x52)},
+    {"Lagoon",
+     C(0xb6,0xe8,0xd2), C(0xd8,0xf6,0xe6), C(0x42,0x80,0x6e),
+     C(0x0c,0x28,0x1e), C(0xe2,0xfa,0xee), C(0xc8,0x6c,0x10),
+     C(0x10,0x36,0x2a), C(0x36,0x6c,0x5a),
+     C(0x06,0x36,0x26), C(0x2e,0x66,0x52)},
     {"Teal",
      C(0x14,0xb0,0xa6), C(0x46,0xd2,0xc8), C(0x00,0x54,0x54),
      C(0x00,0x1c,0x1c), C(0xb8,0xec,0xe6), C(0xff,0xc0,0x40),
@@ -138,36 +133,46 @@ static const Theme THEMES[] = {
      C(0x00,0x10,0x10), C(0x88,0xc4,0xc0), C(0xff,0xb8,0x40),
      C(0xff,0xff,0xff), C(0x88,0xc4,0xc0),
      C(0x00,0x22,0x22), C(0x14,0x4a,0x46)},
-    {"Cosmo",
-     C(0x4c,0x36,0x86), C(0x76,0x5e,0xb8), C(0x1c,0x10,0x3c),
-     C(0x06,0x02,0x18), C(0xb8,0xa0,0xdc), C(0xff,0xd2,0x4a),
-     C(0xff,0xff,0xff), C(0xc8,0xb4,0xea),
-     C(0x1a,0x0a,0x42), C(0x42,0x2a,0x80)},
-    {"Charcoal",
-     C(0x36,0x36,0x3e), C(0x55,0x55,0x60), C(0x12,0x12,0x18),
-     C(0x00,0x00,0x06), C(0x6c,0x6c,0x74), C(0xff,0x40,0x40),
-     C(0xee,0xee,0xf2), C(0xb4,0xb4,0xbc),
-     C(0xee,0xee,0xf2), C(0xb4,0xb4,0xbc)},
-    {"Pikachu",
-     C(0xfd,0xd9,0x1c), C(0xff,0xee,0x60), C(0xa6,0x60,0x00),
-     C(0x30,0x18,0x00), C(0xff,0xf0,0xa6), C(0xa6,0x2e,0x14),
-     C(0x2c,0x18,0x00), C(0x80,0x4c,0x00),
-     C(0x46,0x2a,0x00), C(0x82,0x52,0x00)},
-    {"Silvery",
-     C(0xa6,0xa8,0xb2), C(0xcc,0xce,0xd6), C(0x4e,0x4e,0x58),
-     C(0x16,0x16,0x1c), C(0xe2,0xe4,0xea), C(0x82,0x36,0x18),
-     C(0x10,0x10,0x1a), C(0x42,0x42,0x4c),
-     C(0x10,0x10,0x1a), C(0x44,0x44,0x52)},
-    {"Lagoon",
-     C(0xb6,0xe8,0xd2), C(0xd8,0xf6,0xe6), C(0x42,0x80,0x6e),
-     C(0x0c,0x28,0x1e), C(0xe2,0xfa,0xee), C(0xc8,0x6c,0x10),
-     C(0x10,0x36,0x2a), C(0x36,0x6c,0x5a),
-     C(0x06,0x36,0x26), C(0x2e,0x66,0x52)},
+    {"Kiwi",
+     C(0x82,0xc6,0x28), C(0xb6,0xe0,0x5a), C(0x3a,0x60,0x08),
+     C(0x10,0x20,0x00), C(0xdc,0xf6,0x96), C(0xc8,0x46,0x10),
+     C(0x14,0x2c,0x00), C(0x3a,0x60,0x08),
+     C(0x14,0x30,0x06), C(0x3e,0x66,0x18)},
+    {"Dandelion",
+     C(0xf6,0xc6,0x1c), C(0xff,0xe2,0x6a), C(0x8a,0x5c,0x00),
+     C(0x2a,0x18,0x00), C(0xff,0xee,0xa0), C(0xb6,0x36,0x0a),
+     C(0x2c,0x1c,0x00), C(0x70,0x4a,0x00),
+     C(0x4a,0x30,0x00), C(0x80,0x56,0x00)},
     {"Tangerine",
      C(0xf6,0x82,0x1c), C(0xff,0xae,0x5a), C(0x8c,0x3c,0x00),
      C(0x28,0x10,0x00), C(0xff,0xd2,0xa6), C(0x1a,0x5a,0xc8),
      C(0x40,0x18,0x00), C(0x80,0x36,0x00),
      C(0x46,0x1c,0x00), C(0x82,0x36,0x00)},
+    {"Pikachu",
+     C(0xfd,0xd9,0x1c), C(0xff,0xee,0x60), C(0xa6,0x60,0x00),
+     C(0x30,0x18,0x00), C(0xff,0xf0,0xa6), C(0xa6,0x2e,0x14),
+     C(0x2c,0x18,0x00), C(0x80,0x4c,0x00),
+     C(0x46,0x2a,0x00), C(0x82,0x52,0x00)},
+    {"Silver",
+     C(0xc2,0xc2,0xca), C(0xe2,0xe2,0xea), C(0x55,0x55,0x5e),
+     C(0x18,0x18,0x1e), C(0xee,0xee,0xf2), C(0x8a,0x18,0x36),
+     C(0x14,0x14,0x1c), C(0x44,0x44,0x4e),
+     C(0x16,0x16,0x1c), C(0x4a,0x4a,0x52)},
+    {"Silvery",
+     C(0xa6,0xa8,0xb2), C(0xcc,0xce,0xd6), C(0x4e,0x4e,0x58),
+     C(0x16,0x16,0x1c), C(0xe2,0xe4,0xea), C(0x82,0x36,0x18),
+     C(0x10,0x10,0x1a), C(0x42,0x42,0x4c),
+     C(0x10,0x10,0x1a), C(0x44,0x44,0x52)},
+    {"DMG",
+     C(0xa8,0xa9,0x9a), C(0xc4,0xc4,0xb4), C(0x5a,0x5a,0x50),
+     C(0x18,0x18,0x10), C(0x9b,0xbc,0x0f), C(0xc0,0x40,0x70),
+     C(0x18,0x18,0x18), C(0x4e,0x4e,0x46),
+     C(0x0f,0x38,0x0f), C(0x30,0x62,0x30)},
+    {"Charcoal",
+     C(0x36,0x36,0x3e), C(0x55,0x55,0x60), C(0x12,0x12,0x18),
+     C(0x00,0x00,0x06), C(0x6c,0x6c,0x74), C(0xff,0x40,0x40),
+     C(0xee,0xee,0xf2), C(0xb4,0xb4,0xbc),
+     C(0xee,0xee,0xf2), C(0xb4,0xb4,0xbc)},
 };
 #define THEME_COUNT ((int)(sizeof(THEMES) / sizeof(THEMES[0])))
 
@@ -185,20 +190,35 @@ static struct nk_rect menu_header_bounds[MENU_COUNT];
 static struct nk_rect dropdown_bounds;
 static bool menubar_visible_last_frame = true;
 
-static bool show_cpu   = false;
-static bool show_mem   = false;
-static bool show_audio = false;
-static bool show_file  = false;
-static bool show_about = false;
-static bool show_theme = false;
+// FLOATING PANELS - ONE TABLE KEEPS MENUS, ESC, AND SHADOWS IN SYNC
+typedef enum {
+    PANEL_FILE = 0,
+    PANEL_AUDIO,
+    PANEL_CPU,
+    PANEL_MEM,
+    PANEL_THEME,
+    PANEL_ABOUT,
+    PANEL_COUNT
+} PanelId;
 
-// RESET BOUNDS ON OPEN ELSE PANEL WONT REOPEN
-static bool reset_cpu_bounds   = true;
-static bool reset_mem_bounds   = true;
-static bool reset_audio_bounds = true;
-static bool reset_file_bounds  = true;
-static bool reset_about_bounds = true;
-static bool reset_theme_bounds = true;
+typedef struct {
+    const char* title;   // ALSO THE NUKLEAR WINDOW NAME
+    bool        open;
+    bool        reset;   // SNAP BACK TO A DEFAULT SPOT ON NEXT SHOW
+} Panel;
+
+static Panel panels[PANEL_COUNT] = {
+    {"Open ROM", false, false},
+    {"Audio",    false, false},
+    {"CPU",      false, false},
+    {"Memory",   false, false},
+    {"Theme",    false, false},
+    {"About",    false, false},
+};
+
+// NEWEST-ON-TOP STACK SO ESC PEELS PANELS IN STACKING ORDER
+static PanelId panel_z[PANEL_COUNT];
+static int     panel_z_count = 0;
 
 #define MAX_FILES     512
 #define MAX_PATH_LEN 1024
@@ -240,10 +260,16 @@ static bool window_is_fullscreen(void) {
     return (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
 }
 
+static bool any_panel_open(void) {
+    for (int i = 0; i < PANEL_COUNT; i++)
+        if (panels[i].open) return true;
+    return false;
+}
+
 static bool menubar_should_show(void) {
     if (!window_is_fullscreen()) return true;
     if (active_menu != -1)       return true;
-    if (show_cpu || show_mem || show_audio || show_file || show_about || show_theme) return true;
+    if (any_panel_open())        return true;
     if (!ctx) return false;
     float mouse_y = ctx->input.mouse.pos.y;
     float threshold = menubar_visible_last_frame ? (float)(MENU_H * 2)
@@ -251,12 +277,50 @@ static bool menubar_should_show(void) {
     return mouse_y >= 0.0f && mouse_y < threshold;
 }
 
-static void panel_open(const char* name, bool* visible, bool* reset_flag) {
+static void panel_z_drop(PanelId id) {
+    int w = 0;
+    for (int i = 0; i < panel_z_count; i++)
+        if (panel_z[i] != id) panel_z[w++] = panel_z[i];
+    panel_z_count = w;
+}
+
+static void panel_z_raise(PanelId id) {
+    panel_z_drop(id);
+    if (panel_z_count < PANEL_COUNT) panel_z[panel_z_count++] = id;
+}
+
+static void panel_open(PanelId id) {
+    panels[id].open  = true;
+    panels[id].reset = true;
+    panel_z_raise(id);
     if (ctx) {
-        nk_window_show(ctx, name, NK_SHOWN);
+        nk_window_show(ctx, panels[id].title, NK_SHOWN);
+        nk_window_set_focus(ctx, panels[id].title);
     }
-    *visible = true;
-    *reset_flag = true;
+}
+
+static void panel_close(PanelId id) {
+    if (ctx) nk_window_show(ctx, panels[id].title, NK_HIDDEN);
+    panels[id].open = false;
+    panel_z_drop(id);
+}
+
+// SYNC OUR STATE WHEN NUKLEAR CLOSED THE WINDOW VIA ITS TITLEBAR X
+static void panel_mark_closed(PanelId id) {
+    panels[id].open = false;
+    panel_z_drop(id);
+}
+
+static void panel_toggle(PanelId id) {
+    if (panels[id].open) panel_close(id);
+    else                 panel_open(id);
+}
+
+// CLOSE THE TOP-MOST OVERLAY; false MEANS NOTHING WAS OPEN TO CLOSE
+static bool ui_dismiss_top(void) {
+    if (active_menu != -1) { active_menu = -1; return true; }
+    if (panel_z_count > 0) { panel_close(panel_z[panel_z_count - 1]); return true; }
+    return false;
 }
 
 static void cycle_theme(int delta) {
@@ -303,7 +367,7 @@ static void apply_theme(void) {
     s->window.group_border         = BORDER_W;
     s->window.tooltip_border       = BORDER_W;
     s->window.popup_border         = BORDER_W;
-    s->window.rounding             = 0.0f;
+    s->window.rounding             = WIN_ROUNDING;
     s->window.padding              = nk_vec2(PANEL_PAD, PANEL_PAD);
     s->window.spacing              = nk_vec2(PANEL_SPACING, PANEL_SPACING);
     s->window.group_padding        = nk_vec2(PANEL_PAD/2, PANEL_PAD/2);
@@ -338,7 +402,7 @@ static void apply_theme(void) {
     s->window.header.close_button.text_active = (struct nk_color){0xff,0xff,0xff,0xff};
     s->window.header.close_button.text_alignment = NK_TEXT_CENTERED;
     s->window.header.close_button.border = 0;
-    s->window.header.close_button.rounding = 0;
+    s->window.header.close_button.rounding = WIDGET_ROUNDING;
     s->window.header.close_button.padding = nk_vec2(5, 5);
     s->window.header.close_button.touch_padding = nk_vec2(3, 3);
     s->window.header.minimize_button = s->window.header.close_button;
@@ -355,8 +419,8 @@ static void apply_theme(void) {
     s->button.text_active  = (struct nk_color){0xff,0xff,0xff,0xff};
     s->button.text_alignment = NK_TEXT_CENTERED;
     s->button.border       = BORDER_W;
-    s->button.rounding     = 0;
-    s->button.padding      = nk_vec2(4, 2);
+    s->button.rounding     = BTN_ROUNDING;
+    s->button.padding      = nk_vec2(8, 4);
     s->button.image_padding = nk_vec2(0, 0);
     s->button.touch_padding = nk_vec2(0, 0);
 
@@ -369,7 +433,8 @@ static void apply_theme(void) {
     s->contextual_button.text_active = (struct nk_color){0xff,0xff,0xff,0xff};
     s->contextual_button.text_alignment = NK_TEXT_LEFT;
     s->contextual_button.border = 0;
-    s->contextual_button.padding = nk_vec2(8, 3);
+    s->contextual_button.rounding = WIDGET_ROUNDING;
+    s->contextual_button.padding = nk_vec2(10, 4);
 
     s->menu_button = s->button;
     s->menu_button.normal = nk_style_item_color(shell);
@@ -410,8 +475,8 @@ static void apply_theme(void) {
     s->selectable.text_pressed_active = (struct nk_color){0xff,0xff,0xff,0xff};
     s->selectable.text_background    = screen;
     s->selectable.text_alignment     = NK_TEXT_LEFT;
-    s->selectable.rounding           = 0;
-    s->selectable.padding            = nk_vec2(4, 2);
+    s->selectable.rounding           = WIDGET_ROUNDING;
+    s->selectable.padding            = nk_vec2(6, 2);
 
     s->slider.normal       = nk_style_item_color(screen);
     s->slider.hover        = nk_style_item_color(screen);
@@ -424,7 +489,7 @@ static void apply_theme(void) {
     s->slider.cursor_hover  = nk_style_item_color(accent_hi);
     s->slider.cursor_active = nk_style_item_color(accent_lo);
     s->slider.border_color = shell_lo;
-    s->slider.rounding     = 0;
+    s->slider.rounding     = WIDGET_ROUNDING;
     s->slider.bar_height   = 6;
     s->slider.padding      = nk_vec2(4, 4);
     s->slider.cursor_size  = nk_vec2(10, 14);
@@ -445,8 +510,8 @@ static void apply_theme(void) {
     s->edit.selected_text_normal = (struct nk_color){0xff,0xff,0xff,0xff};
     s->edit.selected_text_hover  = (struct nk_color){0xff,0xff,0xff,0xff};
     s->edit.border       = BORDER_W;
-    s->edit.rounding     = 0;
-    s->edit.padding      = nk_vec2(4, 2);
+    s->edit.rounding     = WIDGET_ROUNDING;
+    s->edit.padding      = nk_vec2(6, 3);
     s->edit.row_padding  = 2;
     s->edit.cursor_size  = 1;
 
@@ -458,11 +523,11 @@ static void apply_theme(void) {
     s->scrollv.cursor_active = nk_style_item_color(accent_lo);
     s->scrollv.border_color  = shell_lo;
     s->scrollv.cursor_border_color = shell_lo;
-    s->scrollv.rounding      = 0;
-    s->scrollv.rounding_cursor = 0;
+    s->scrollv.rounding      = 3;
+    s->scrollv.rounding_cursor = 3;
     s->scrollv.border        = 0;
     s->scrollv.border_cursor = 0;
-    s->scrollv.padding       = nk_vec2(0, 0);
+    s->scrollv.padding       = nk_vec2(2, 2);
     s->scrollh = s->scrollv;
 
     (void)text_alt;
@@ -549,6 +614,145 @@ static void tile_grain(SDL_Renderer* r, int rx, int ry, int rw, int rh) {
     }
 }
 
+// ROUNDED-RECT + SHADOW PRIMITIVES
+
+static SDL_Rect inflate(SDL_Rect a, int d) {
+    SDL_Rect b = {a.x - d, a.y - d, a.w + 2 * d, a.h + 2 * d};
+    return b;
+}
+
+static void fill_round_rect(SDL_Renderer* r, SDL_Rect rect, int rad,
+                            struct nk_color col) {
+    if (rect.w <= 0 || rect.h <= 0) return;
+    if (rad < 1) { sdl_setcolor(r, col); SDL_RenderFillRect(r, &rect); return; }
+    if (rad > rect.w / 2) rad = rect.w / 2;
+    if (rad > rect.h / 2) rad = rect.h / 2;
+
+    sdl_setcolor(r, col);
+    SDL_Rect mid = {rect.x, rect.y + rad, rect.w, rect.h - 2 * rad};
+    SDL_RenderFillRect(r, &mid);
+
+    for (int i = 0; i < rad; i++) {
+        int dy = rad - 1 - i;
+        int dx = rad - (int)(sqrt((double)(rad * rad - dy * dy)) + 0.5);
+        SDL_Rect top = {rect.x + dx, rect.y + i, rect.w - 2 * dx, 1};
+        SDL_Rect bot = {rect.x + dx, rect.y + rect.h - 1 - i, rect.w - 2 * dx, 1};
+        SDL_RenderFillRect(r, &top);
+        SDL_RenderFillRect(r, &bot);
+    }
+}
+
+// SOFT DROP SHADOW: STACKED TRANSLUCENT ROUNDED RECTS, OFFSET DOWN-RIGHT
+static void draw_soft_shadow(SDL_Renderer* r, SDL_Rect rect, int rad) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    const int layers = 6;
+    for (int i = layers; i >= 1; i--) {
+        SDL_Rect s = inflate(rect, i * 2);
+        s.x += 2;
+        s.y += 3 + i;
+        struct nk_color sh = {0, 0, 0, 14};
+        fill_round_rect(r, s, rad + i * 2, sh);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+// PANELS/DROPDOWNS REGISTER BOUNDS EACH FRAME SO SHADOWS LAND UNDER THEM
+#define MAX_SHADOWS 12
+static SDL_Rect g_shadow_rects[MAX_SHADOWS];
+static int      g_shadow_count = 0;
+
+static void ui_shadow_reset(void) { g_shadow_count = 0; }
+
+static void ui_shadow_add(struct nk_rect b) {
+    if (g_shadow_count >= MAX_SHADOWS) return;
+    SDL_Rect rc = {(int)b.x, (int)b.y, (int)b.w, (int)b.h};
+    g_shadow_rects[g_shadow_count++] = rc;
+}
+
+void ui_draw_shadows(SDL_Renderer* r) {
+    if (!ui_initialized) return;
+    for (int i = 0; i < g_shadow_count; i++)
+        draw_soft_shadow(r, g_shadow_rects[i], (int)WIN_ROUNDING);
+}
+
+// CASE MATERIAL PASSES
+
+// SOFT VERTICAL GRADIENT - TRANSLUCENT-PLASTIC DEPTH
+static void draw_case_gradient(SDL_Renderer* r, SDL_Rect c, const Theme* th) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    for (int y = 0; y < c.h; y++) {
+        float t = (float)y / (float)(c.h > 1 ? c.h - 1 : 1);
+        struct nk_color tint;
+        int a;
+        if (t < 0.5f) { tint = th->shell_hi; a = (int)((0.5f - t) * 2.0f * 30.0f); }
+        else          { tint = th->shell_lo; a = (int)((t - 0.5f) * 2.0f * 46.0f); }
+        SDL_SetRenderDrawColor(r, tint.r, tint.g, tint.b, (Uint8)a);
+        SDL_Rect ln = {c.x, c.y + y, c.w, 1};
+        SDL_RenderFillRect(r, &ln);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+// DIAGONAL SHEEN STREAK - THE GLOSSY-PLASTIC SIGNATURE
+static void draw_case_gloss(SDL_Renderer* r, SDL_Rect c, struct nk_color tint) {
+    int max_half = c.w / 11;
+    if (max_half < 8) return;
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    const int N = 5;
+    const float slope = 0.85f;
+    int origin = c.w / 6;
+    for (int k = 0; k < N; k++) {
+        int half = max_half * (k + 1) / N;
+        SDL_SetRenderDrawColor(r, tint.r, tint.g, tint.b, 9);
+        for (int y = 0; y < c.h; y++) {
+            int cx = c.x + origin + (int)(y * slope);
+            SDL_Rect ln = {cx - half, c.y + y, half * 2, 1};
+            SDL_RenderFillRect(r, &ln);
+        }
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+// INNER SHADOW HUGGING THE WINDOW EDGE - THICKER-PLASTIC RIM
+static void draw_case_vignette(SDL_Renderer* r, SDL_Rect c, struct nk_color dark) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    const int d = 28;
+    for (int i = 0; i < d; i++) {
+        int a = (d - i) * 34 / d;
+        SDL_SetRenderDrawColor(r, dark.r, dark.g, dark.b, (Uint8)a);
+        SDL_Rect t  = {c.x, c.y + i, c.w, 1};
+        SDL_Rect b  = {c.x, c.y + c.h - 1 - i, c.w, 1};
+        SDL_Rect l  = {c.x + i, c.y, 1, c.h};
+        SDL_Rect rr = {c.x + c.w - 1 - i, c.y, 1, c.h};
+        SDL_RenderFillRect(r, &t);
+        SDL_RenderFillRect(r, &b);
+        SDL_RenderFillRect(r, &l);
+        SDL_RenderFillRect(r, &rr);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+// CLASSIC ANGLED SPEAKER GRILLE TUCKED INTO THE BOTTOM-RIGHT
+static void draw_speaker_grille(SDL_Renderer* r, SDL_Rect lcd,
+                                int win_w, int win_h, const Theme* th) {
+    if (win_h - (lcd.y + lcd.h) < 16) return;
+    if (win_w - (lcd.x + lcd.w) < 36) return;
+
+    const int lines = 5, len = 22, gap = 5;
+    int by = win_h - 9;
+    int bx = win_w - 12;
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    for (int i = 0; i < lines; i++) {
+        int ox = i * gap;
+        SDL_SetRenderDrawColor(r, th->shell_lo.r, th->shell_lo.g, th->shell_lo.b, 200);
+        SDL_RenderDrawLine(r, bx - ox, by, bx - ox - len, by - len);
+        SDL_SetRenderDrawColor(r, th->shell_hi.r, th->shell_hi.g, th->shell_hi.b, 150);
+        SDL_RenderDrawLine(r, bx - ox + 1, by, bx - ox - len + 1, by - len);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 void ui_draw_chrome_under(SDL_Renderer* r, int win_w, int win_h) {
     if (!ui_initialized) return;
     if (window_is_fullscreen()) return;
@@ -558,69 +762,49 @@ void ui_draw_chrome_under(SDL_Renderer* r, int win_w, int win_h) {
     const Theme* th = T();
     ensure_grain_tex(r);
 
+    SDL_Rect c = {0, menu_h, win_w, win_h - menu_h};
+
+    // 1. BASE SHELL + FROSTED GRAIN
     sdl_setcolor(r, th->shell);
-    SDL_Rect case_rect = {0, menu_h, win_w, win_h - menu_h};
-    SDL_RenderFillRect(r, &case_rect);
+    SDL_RenderFillRect(r, &c);
+    tile_grain(r, c.x, c.y, c.w, c.h);
 
-    tile_grain(r, 0, menu_h, win_w, win_h - menu_h);
+    // 2. TRANSLUCENT-PLASTIC MATERIAL PASSES
+    draw_case_gradient(r, c, th);
+    draw_case_gloss(r, c, th->shell_hi);
+    draw_case_vignette(r, c, blend(th->shell_lo, th->bezel, 90));
 
+    // 3. RECESSED SCREEN WELL
     SDL_Rect lcd = ui_screen_rect(win_w, win_h);
 
-    sdl_setcolor(r, th->shell_lo);
-    SDL_Rect groove = {
-        lcd.x - CASE_BEZEL - CASE_GROOVE,
-        lcd.y - CASE_BEZEL - CASE_GROOVE,
-        lcd.w + 2 * (CASE_BEZEL + CASE_GROOVE),
-        lcd.h + 2 * (CASE_BEZEL + CASE_GROOVE),
-    };
-    SDL_RenderFillRect(r, &groove);
+    SDL_Rect groove = inflate(lcd, CASE_BEZEL + CASE_GROOVE);
+    fill_round_rect(r, groove, 9, th->shell_lo);
 
-    sdl_setcolor(r, th->bezel);
-    SDL_Rect bz = {
-        lcd.x - CASE_BEZEL,
-        lcd.y - CASE_BEZEL,
-        lcd.w + 2 * CASE_BEZEL,
-        lcd.h + 2 * CASE_BEZEL,
-    };
-    SDL_RenderFillRect(r, &bz);
+    // LIGHT CATCHES THE RAISED CASE LIP ABOVE THE WELL
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    struct nk_color lip = {th->shell_hi.r, th->shell_hi.g, th->shell_hi.b, 150};
+    SDL_Rect lip_r = {groove.x + 6, groove.y - 1, groove.w - 12, 1};
+    sdl_setcolor(r, lip);
+    SDL_RenderFillRect(r, &lip_r);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-    sdl_setcolor(r, th->shell_hi);
-    SDL_Rect bz_hi = {bz.x, bz.y - 1, bz.w, 1};
-    SDL_RenderFillRect(r, &bz_hi);
+    SDL_Rect bz = inflate(lcd, CASE_BEZEL);
+    fill_round_rect(r, bz, 6, th->bezel);
 
-}
+    // GLASSY BEZEL EDGES
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    struct nk_color bz_hi = {0xff, 0xff, 0xff, 38};
+    SDL_Rect bz_top = {bz.x + 5, bz.y + 1, bz.w - 10, 1};
+    sdl_setcolor(r, bz_hi);
+    SDL_RenderFillRect(r, &bz_top);
+    struct nk_color bz_lo = {0, 0, 0, 90};
+    SDL_Rect bz_bot = {bz.x + 5, bz.y + bz.h - 2, bz.w - 10, 1};
+    sdl_setcolor(r, bz_lo);
+    SDL_RenderFillRect(r, &bz_bot);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-static void draw_drag_grip(SDL_Renderer* r, int win_w, int win_h) {
-    if (window_is_fullscreen()) return;
-    const Theme* th = T();
-    const int dot = 2;
-    const int step = 4;
-    const int pad = 3;
-    const int bx = win_w - pad;
-    const int by = win_h - pad;
-
-    sdl_setcolor(r, th->shell_lo);
-    for (int row = 0; row < 3; row++) {
-        for (int col = 0; col <= row; col++) {
-            SDL_Rect px = {
-                bx - (col + 1) * step + 1,
-                by - (3 - row) * step + 1,
-                dot, dot
-            };
-            SDL_RenderFillRect(r, &px);
-        }
-    }
-    sdl_setcolor(r, th->shell_hi);
-    for (int row = 0; row < 3; row++) {
-        for (int col = 0; col <= row; col++) {
-            SDL_Rect px = {
-                bx - (col + 1) * step,
-                by - (3 - row) * step,
-                dot, dot
-            };
-            SDL_RenderFillRect(r, &px);
-        }
-    }
+    // 4. SPEAKER GRILLE
+    draw_speaker_grille(r, lcd, win_w, win_h, th);
 }
 
 void ui_draw_chrome_over(SDL_Renderer* r, int win_w, int win_h) {
@@ -628,20 +812,25 @@ void ui_draw_chrome_over(SDL_Renderer* r, int win_w, int win_h) {
     if (window_is_fullscreen()) return;
     int menu_h = ui_menu_height();
     if (menu_h <= 0) return;
+    (void)win_h;
 
     const Theme* th = T();
 
+    // TOP BEVEL - LIGHT ON THE UPPER LIP OF THE SHELL
     sdl_setcolor(r, th->shell_hi);
     SDL_Rect top = {0, 0, win_w, MENU_BEVEL};
     SDL_RenderFillRect(r, &top);
     SDL_Rect sub = {0, MENU_BEVEL, win_w, 1};
     SDL_RenderFillRect(r, &sub);
 
-    sdl_setcolor(r, th->shell_lo);
-    SDL_Rect bot = {0, menu_h - MENU_BEVEL, win_w, MENU_BEVEL};
-    SDL_RenderFillRect(r, &bot);
-
-    draw_drag_grip(r, win_w, win_h);
+    // SOFT SHADOW DROPPING FROM THE MENU BAR ONTO THE CASE
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    for (int i = 0; i < 6; i++) {
+        SDL_SetRenderDrawColor(r, 0, 0, 0, (Uint8)(58 - i * 9));
+        SDL_Rect ln = {0, menu_h + i, win_w, 1};
+        SDL_RenderFillRect(r, &ln);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
 SDL_Rect ui_screen_rect(int win_w, int win_h) {
@@ -1021,10 +1210,13 @@ static void open_selected_rom(void) {
     if (e->is_dir) { browser_enter(e->name); return; }
     char full_path[MAX_PATH_LEN + 384];
     snprintf(full_path, sizeof(full_path), "%s/%s", browser_dir, e->name);
-    if (gameboy_load_rom(full_path)) show_file = false;
+    if (gameboy_load_rom(full_path)) panel_close(PANEL_FILE);
 }
 
 // DROPDOWNS
+
+#define DD_ITEM_H  22
+#define ITEM_PAD_W 16
 
 static bool dd_item(const char* label) {
     return nk_button_label_styled(ctx, &ctx->style.contextual_button, label) != 0;
@@ -1035,10 +1227,10 @@ static void dd_sep(const char* label) {
 }
 
 static void draw_dropdown_items(int menu_idx) {
-    nk_layout_row_dynamic(ctx, 20, 1);
+    nk_layout_row_dynamic(ctx, DD_ITEM_H, 1);
     switch (menu_idx) {
         case 0:
-            if (dd_item("Open ROM...")) { panel_open("Open ROM", &show_file, &reset_file_bounds); browser_dirty = true; active_menu = -1; }
+            if (dd_item("Open ROM...")) { panel_open(PANEL_FILE); browser_dirty = true; active_menu = -1; }
             if (dd_item("Reset"))       { gameboy_reset();   active_menu = -1; }
             if (dd_item("Quit"))        { get_gb()->die = true; active_menu = -1; }
             break;
@@ -1067,37 +1259,29 @@ static void draw_dropdown_items(int menu_idx) {
             }
             break;
         case 3:
-            if (dd_item(show_audio ? "Hide Audio" : "Show Audio")) {
-                if (show_audio) {
-                    show_audio = false;
-                    nk_window_close(ctx, "Audio");
-                } else {
-                    panel_open("Audio", &show_audio, &reset_audio_bounds);
-                }
+            if (dd_item(panels[PANEL_AUDIO].open ? "Hide Audio" : "Show Audio")) {
+                panel_toggle(PANEL_AUDIO);
                 active_menu = -1;
             }
             break;
         case 4:
-            if (dd_item(show_cpu ? "Hide CPU" : "Show CPU")) {
-                if (show_cpu) { show_cpu = false; nk_window_close(ctx, "CPU"); }
-                else panel_open("CPU", &show_cpu, &reset_cpu_bounds);
+            if (dd_item(panels[PANEL_CPU].open ? "Hide CPU" : "Show CPU")) {
+                panel_toggle(PANEL_CPU);
                 active_menu = -1;
             }
-            if (dd_item(show_mem ? "Hide Memory" : "Show Memory")) {
-                if (show_mem) { show_mem = false; nk_window_close(ctx, "Memory"); }
-                else panel_open("Memory", &show_mem, &reset_mem_bounds);
+            if (dd_item(panels[PANEL_MEM].open ? "Hide Memory" : "Show Memory")) {
+                panel_toggle(PANEL_MEM);
                 active_menu = -1;
             }
             break;
         case 5:
-            if (dd_item(show_theme ? "Hide Theme Picker" : "Show Theme Picker")) {
-                if (show_theme) { show_theme = false; nk_window_close(ctx, "Theme"); }
-                else panel_open("Theme", &show_theme, &reset_theme_bounds);
+            if (dd_item(panels[PANEL_THEME].open ? "Hide Theme Picker" : "Show Theme Picker")) {
+                panel_toggle(PANEL_THEME);
                 active_menu = -1;
             }
             break;
         case 6:
-            if (dd_item("About")) { panel_open("About", &show_about, &reset_about_bounds); active_menu = -1; }
+            if (dd_item("About")) { panel_open(PANEL_ABOUT); active_menu = -1; }
             break;
         default: break;
     }
@@ -1116,9 +1300,6 @@ typedef struct {
     int   rows;
     float total_h;
 } Measure;
-
-#define DD_ITEM_H 20
-#define ITEM_PAD_W 16
 
 static void m_item(Measure* m, const char* s) {
     m->max_w = fmaxf2(m->max_w, text_w(s) + ITEM_PAD_W);
@@ -1165,14 +1346,14 @@ static struct nk_vec2 dropdown_size(int menu_idx) {
             m_item(&m, "Toggle Fullscreen (F11)");
             break;
         case 3:
-            m_item(&m, show_audio ? "Hide Audio" : "Show Audio");
+            m_item(&m, panels[PANEL_AUDIO].open ? "Hide Audio" : "Show Audio");
             break;
         case 4:
-            m_item(&m, show_cpu ? "Hide CPU" : "Show CPU");
-            m_item(&m, show_mem ? "Hide Memory" : "Show Memory");
+            m_item(&m, panels[PANEL_CPU].open ? "Hide CPU" : "Show CPU");
+            m_item(&m, panels[PANEL_MEM].open ? "Hide Memory" : "Show Memory");
             break;
         case 5:
-            m_item(&m, show_theme ? "Hide Theme Picker" : "Show Theme Picker");
+            m_item(&m, panels[PANEL_THEME].open ? "Hide Theme Picker" : "Show Theme Picker");
             break;
         case 6:
             m_item(&m, "About");
@@ -1197,6 +1378,7 @@ static void draw_dropdown(int menu_idx) {
     if (y < 0.0f) y = 0.0f;
 
     dropdown_bounds = nk_rect(x, y, sz.x, sz.y);
+    ui_shadow_add(dropdown_bounds);
 
     const char* name = DROPDOWN_NAMES[menu_idx];
 
@@ -1216,11 +1398,14 @@ static void draw_main_menu(int win_w) {
                        nk_vec2(MENUBAR_PAD_X, MENUBAR_PAD_Y));
     nk_style_push_vec2(ctx, &ctx->style.window.spacing,
                        nk_vec2(MENUBAR_SPACING, 0));
+    // FULL-WIDTH BAR MUST STAY SQUARE OR THE CORNERS REVEAL BLACK
+    nk_style_push_float(ctx, &ctx->style.window.rounding, 0.0f);
 
     if (!nk_begin(ctx, "_menubar",
                   nk_rect(0, 0, (float)win_w, MENU_H),
                   NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
         nk_end(ctx);
+        nk_style_pop_float(ctx);
         nk_style_pop_vec2(ctx);
         nk_style_pop_vec2(ctx);
         return;
@@ -1263,9 +1448,8 @@ static void draw_main_menu(int win_w) {
         const char* base = strrchr(rom, '/');
         base = base ? base + 1 : rom;
         char status[256];
-        snprintf(status, sizeof(status), "GBEmu  [%s]  %.140s%s",
-                 T()->name, base,
-                 get_gb()->paused ? "  *PAUSED*" : "");
+        snprintf(status, sizeof(status), "GBEmu  %.160s%s",
+                 base, get_gb()->paused ? "  *PAUSED*" : "");
         nk_label_colored(ctx, status, NK_TEXT_RIGHT, T()->text);
     }
 
@@ -1279,12 +1463,14 @@ static void draw_main_menu(int win_w) {
         cb.text_hover  = (struct nk_color){0xff,0xff,0xff,0xff};
         cb.text_active = (struct nk_color){0xff,0xff,0xff,0xff};
         cb.border = 0;
+        cb.rounding = 0;
         if (nk_button_label_styled(ctx, &cb, "X")) get_gb()->die = true;
     }
 
     nk_layout_row_end(ctx);
     nk_end(ctx);
 
+    nk_style_pop_float(ctx);
     nk_style_pop_vec2(ctx);
     nk_style_pop_vec2(ctx);
 
@@ -1311,11 +1497,17 @@ static void draw_main_menu(int win_w) {
                    | NK_WINDOW_CLOSABLE | NK_WINDOW_SCALABLE \
                    | NK_WINDOW_DYNAMIC)
 
-static void maybe_reset_panel(const char* name, struct nk_rect rect,
-                              bool* reset_flag) {
-    if (!*reset_flag) return;
-    nk_window_set_bounds(ctx, name, rect);
-    *reset_flag = false;
+static void maybe_reset_panel(PanelId id, struct nk_rect rect) {
+    if (!panels[id].reset) return;
+    nk_window_set_bounds(ctx, panels[id].title, rect);
+    panels[id].reset = false;
+}
+
+// CALL JUST INSIDE nk_begin: QUEUE THE DROP SHADOW + KEEP THE ESC STACK
+// ORDERED SO THE FOCUSED PANEL IS ALWAYS THE ONE ESC CLOSES FIRST
+static void panel_frame_begin(PanelId id) {
+    ui_shadow_add(nk_window_get_bounds(ctx));
+    if (nk_window_is_active(ctx, panels[id].title)) panel_z_raise(id);
 }
 
 static void lblf(int rh, const char* fmt, ...) {
@@ -1330,9 +1522,10 @@ static void lblf(int rh, const char* fmt, ...) {
 
 static void draw_audio_window(void) {
     struct nk_rect r = panel_rect(80, MENU_H + 20, 300, 260);
-    maybe_reset_panel("Audio", r, &reset_audio_bounds);
+    maybe_reset_panel(PANEL_AUDIO, r);
 
-    if (nk_begin(ctx, "Audio", r, PANEL_FLAGS)) {
+    if (nk_begin(ctx, panels[PANEL_AUDIO].title, r, PANEL_FLAGS)) {
+        panel_frame_begin(PANEL_AUDIO);
         nk_layout_row_dynamic(ctx, ROW_H_LBL, 1);
         nk_label(ctx, "Master Volume", NK_TEXT_LEFT);
 
@@ -1364,16 +1557,17 @@ static void draw_audio_window(void) {
             apu_set_channel_enabled(i, on != 0);
         }
     } else {
-        show_audio = false;
+        panel_mark_closed(PANEL_AUDIO);
     }
     nk_end(ctx);
 }
 
 static void draw_cpu_window(void) {
     struct nk_rect r = panel_rect(380, MENU_H + 20, 280, 260);
-    maybe_reset_panel("CPU", r, &reset_cpu_bounds);
+    maybe_reset_panel(PANEL_CPU, r);
 
-    if (nk_begin(ctx, "CPU", r, PANEL_FLAGS)) {
+    if (nk_begin(ctx, panels[PANEL_CPU].title, r, PANEL_FLAGS)) {
+        panel_frame_begin(PANEL_CPU);
         registers* reg = get_registers();
         char buf[64];
 
@@ -1397,16 +1591,17 @@ static void draw_cpu_window(void) {
         lblf(ROW_H_LBL, "IME %d   HALT %d",
              get_ime() ? 1 : 0, is_cpu_halted() ? 1 : 0);
     } else {
-        show_cpu = false;
+        panel_mark_closed(PANEL_CPU);
     }
     nk_end(ctx);
 }
 
 static void draw_mem_window(void) {
     struct nk_rect r = panel_rect(60, MENU_H + 300, 540, 300);
-    maybe_reset_panel("Memory", r, &reset_mem_bounds);
+    maybe_reset_panel(PANEL_MEM, r);
 
-    if (nk_begin(ctx, "Memory", r, PANEL_FLAGS)) {
+    if (nk_begin(ctx, panels[PANEL_MEM].title, r, PANEL_FLAGS)) {
+        panel_frame_begin(PANEL_MEM);
 
         nk_layout_row_begin(ctx, NK_STATIC, ROW_H_CTL, 2);
         nk_layout_row_push(ctx, 64);
@@ -1446,18 +1641,19 @@ static void draw_mem_window(void) {
             nk_label(ctx, line, NK_TEXT_LEFT);
         }
     } else {
-        show_mem = false;
+        panel_mark_closed(PANEL_MEM);
     }
     nk_end(ctx);
 }
 
 static void draw_about_window(void) {
     struct nk_rect r = panel_rect(180, MENU_H + 80, 360, 240);
-    maybe_reset_panel("About", r, &reset_about_bounds);
+    maybe_reset_panel(PANEL_ABOUT, r);
 
-    if (nk_begin(ctx, "About", r,
+    if (nk_begin(ctx, panels[PANEL_ABOUT].title, r,
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE |
                  NK_WINDOW_CLOSABLE | NK_WINDOW_DYNAMIC)) {
+        panel_frame_begin(PANEL_ABOUT);
 
         nk_layout_row_dynamic(ctx, ROW_H_LBL + 8, 1);
         nk_label_colored(ctx, "GBEmu", NK_TEXT_CENTERED, T()->text);
@@ -1477,57 +1673,59 @@ static void draw_about_window(void) {
         nk_label_colored(ctx, "ENTER / RSHIFT = Start / Select", NK_TEXT_CENTERED, T()->text_alt);
         nk_label_colored(ctx, "F11 = Fullscreen   [ / ] = cycle theme",
                          NK_TEXT_CENTERED, T()->text_alt);
-
-        nk_layout_row_dynamic(ctx, 6, 1);
-        nk_spacing(ctx, 1);
-
-        char buf[64];
-        snprintf(buf, sizeof(buf), "Theme: %s  (%d / %d)",
-                 T()->name, active_theme + 1, THEME_COUNT);
-        nk_layout_row_dynamic(ctx, ROW_H_LBL, 1);
-        nk_label_colored(ctx, buf, NK_TEXT_CENTERED, T()->text_alt);
     } else {
-        show_about = false;
+        panel_mark_closed(PANEL_ABOUT);
     }
     nk_end(ctx);
 }
 
 static void draw_theme_window(void) {
-    const int rows = (THEME_COUNT + 1) / 2;
-    const int row_h = ROW_H_CTL + 2;
-    int height = PANEL_PAD * 2 + rows * row_h + (rows - 1) * PANEL_SPACING + 32;
-    struct nk_rect r = panel_rect(120, MENU_H + 40, 280, (float)height);
-    maybe_reset_panel("Theme", r, &reset_theme_bounds);
+    const int rows  = (THEME_COUNT + 1) / 2;
+    const int row_h = ROW_H_CTL + 4;
+    int height = PANEL_PAD * 2 + 30 + ROW_H_LBL
+               + rows * row_h + (rows - 1) * PANEL_SPACING + 8;
+    struct nk_rect r = panel_rect(120, MENU_H + 40, 320, (float)height);
+    maybe_reset_panel(PANEL_THEME, r);
 
-    if (nk_begin(ctx, "Theme", r, PANEL_FLAGS)) {
+    if (nk_begin(ctx, panels[PANEL_THEME].title, r, PANEL_FLAGS)) {
+        panel_frame_begin(PANEL_THEME);
+
         nk_layout_row_dynamic(ctx, ROW_H_LBL, 1);
         char hdr[64];
-        snprintf(hdr, sizeof(hdr), "Active: %s", T()->name);
+        snprintf(hdr, sizeof(hdr), "Shell:  %s   (%d / %d)",
+                 T()->name, active_theme + 1, THEME_COUNT);
         nk_label_colored(ctx, hdr, NK_TEXT_LEFT, T()->text_alt);
 
-        nk_layout_row_dynamic(ctx, ROW_H_CTL, 2);
+        // EACH ENTRY = LCD-TINT SWATCH + A SHELL/ACCENT NAME CHIP
+        float sw = (float)ROW_H_CTL;
+        float colw[4] = { sw, 110.0f, sw, 110.0f };
+        nk_layout_row(ctx, NK_STATIC, (float)row_h, 4, colw);
         for (int i = 0; i < THEME_COUNT; i++) {
             const Theme* th = &THEMES[i];
-            struct nk_style_button btn = ctx->style.button;
             bool active = (i == active_theme);
+
+            struct nk_style_button sb = ctx->style.button;
+            sb.normal = sb.hover = sb.active = nk_style_item_color(th->screen);
+            sb.border_color = th->bezel;
+            sb.border   = 2;
+            sb.rounding = WIDGET_ROUNDING;
+            if (nk_button_label_styled(ctx, &sb, "")) active_theme = i;
+
+            struct nk_style_button btn = ctx->style.button;
             btn.normal       = nk_style_item_color(active ? th->accent : th->shell);
             btn.hover        = nk_style_item_color(th->accent);
             btn.active       = nk_style_item_color(th->accent);
-            btn.border_color = th->shell_lo;
+            btn.border_color = active ? th->accent : th->shell_lo;
             btn.text_normal  = active ? (struct nk_color){0xff,0xff,0xff,0xff} : th->text;
             btn.text_hover   = (struct nk_color){0xff,0xff,0xff,0xff};
             btn.text_active  = (struct nk_color){0xff,0xff,0xff,0xff};
-            btn.text_alignment = NK_TEXT_CENTERED;
-            btn.border       = active ? 2 : 1;
-            btn.rounding     = 0;
-            btn.padding      = nk_vec2(4, 2);
-
-            if (nk_button_label_styled(ctx, &btn, th->name)) {
-                active_theme = i;
-            }
+            btn.text_alignment = NK_TEXT_LEFT;
+            btn.border       = active ? 3 : 1;
+            btn.padding      = nk_vec2(8, 2);
+            if (nk_button_label_styled(ctx, &btn, th->name)) active_theme = i;
         }
     } else {
-        show_theme = false;
+        panel_mark_closed(PANEL_THEME);
     }
     nk_end(ctx);
 }
@@ -1539,9 +1737,10 @@ static void draw_file_browser(void) {
     }
 
     struct nk_rect r = panel_rect(60, MENU_H + 20, 460, 400);
-    maybe_reset_panel("Open ROM", r, &reset_file_bounds);
+    maybe_reset_panel(PANEL_FILE, r);
 
-    if (nk_begin(ctx, "Open ROM", r, PANEL_FLAGS)) {
+    if (nk_begin(ctx, panels[PANEL_FILE].title, r, PANEL_FLAGS)) {
+        panel_frame_begin(PANEL_FILE);
 
         nk_layout_row_dynamic(ctx, ROW_H_LBL, 1);
         char dir_label[256];
@@ -1573,14 +1772,14 @@ static void draw_file_browser(void) {
         }
 
         nk_layout_row_dynamic(ctx, ROW_H_CTL + 2, 2);
-        if (nk_button_label(ctx, "Cancel")) show_file = false;
+        if (nk_button_label(ctx, "Cancel")) panel_close(PANEL_FILE);
         const char* action = "Load";
         if (browser_selected >= 0 && browser_entries[browser_selected].is_dir) {
             action = "Enter";
         }
         if (nk_button_label(ctx, action)) open_selected_rom();
     } else {
-        show_file = false;
+        panel_mark_closed(PANEL_FILE);
     }
     nk_end(ctx);
 }
@@ -1624,6 +1823,13 @@ bool ui_handle_event(const SDL_Event* event) {
     nk_sdl_handle_event((SDL_Event*)event);
 
     if (event->type == SDL_QUIT || event->type == SDL_WINDOWEVENT) return false;
+
+    // ESC PEELS OPEN MENUS/PANELS ONE AT A TIME, AND ONLY QUITS WHEN NONE REMAIN
+    if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE) {
+        bool overlay = (active_menu != -1) || any_panel_open();
+        if (overlay && !event->key.repeat) ui_dismiss_top();
+        return overlay;
+    }
 
     if (event->type == SDL_KEYDOWN && !nk_item_is_any_active(ctx)) {
         SDL_Keycode k = event->key.keysym.sym;
@@ -1686,6 +1892,7 @@ SDL_HitTestResult ui_hit_test(int x, int y, int win_w, int win_h) {
 void ui_new_frame(void) {
     if (!ui_initialized) return;
     apply_theme();
+    ui_shadow_reset();
 
     int win_w, win_h;
     win_size(&win_w, &win_h);
@@ -1698,12 +1905,12 @@ void ui_new_frame(void) {
     }
     menubar_visible_last_frame = show_menu;
 
-    if (show_audio) draw_audio_window();
-    if (show_theme) draw_theme_window();
-    if (show_cpu)   draw_cpu_window();
-    if (show_mem)   draw_mem_window();
-    if (show_file)  draw_file_browser();
-    if (show_about) draw_about_window();
+    if (panels[PANEL_AUDIO].open) draw_audio_window();
+    if (panels[PANEL_THEME].open) draw_theme_window();
+    if (panels[PANEL_CPU].open)   draw_cpu_window();
+    if (panels[PANEL_MEM].open)   draw_mem_window();
+    if (panels[PANEL_FILE].open)  draw_file_browser();
+    if (panels[PANEL_ABOUT].open) draw_about_window();
 }
 
 void ui_render(void) {

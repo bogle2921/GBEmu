@@ -275,6 +275,7 @@ void draw_frame() {
         ui_draw_splash(graphics.renderer, dst);
     }
 
+    ui_draw_shadows(graphics.renderer);
     ui_render();
 
     ui_draw_chrome_over(graphics.renderer, win_w, win_h);

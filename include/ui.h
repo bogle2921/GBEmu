@@ -25,6 +25,7 @@ int      ui_menu_height(void);
 SDL_Rect ui_screen_rect(int win_w, int win_h);
 void     ui_draw_chrome_under(SDL_Renderer* r, int win_w, int win_h);
 void     ui_draw_chrome_over(SDL_Renderer* r, int win_w, int win_h);
+void     ui_draw_shadows(SDL_Renderer* r);
 void     ui_draw_splash(SDL_Renderer* r, SDL_Rect screen);
 void     ui_default_window_size(int* w, int* h);
 void     ui_min_window_size(int* w, int* h);
