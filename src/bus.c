@@ -22,10 +22,16 @@ static struct {
 } bus = {0};
 
 void init_bus() {
+    // FULL ZERO INCLUDING BOOTROM - CALLED ONCE AT STARTUP BEFORE load_bootrom.
     memset(&bus, 0, sizeof(bus));
-    memset(&bus.wram, 0, sizeof(bus.wram));
-    memset(&bus.hram, 0, sizeof(bus.hram));
-    memset(&bus.io, 0, sizeof(bus.io));
+}
+
+// RESET-TIME CLEAR - PRESERVES THE BOOTROM SO A RESET WITH bootrom_enabled
+// DOESN'T LEAVE THE GB EXECUTING ZEROS FROM 0x0000.
+void bus_reset(void) {
+    memset(bus.wram, 0, sizeof(bus.wram));
+    memset(bus.hram, 0, sizeof(bus.hram));
+    memset(bus.io,   0, sizeof(bus.io));
     memset(&bus.ports, 0, sizeof(bus.ports));
 }
 
@@ -85,7 +91,18 @@ static void write_io(u16 addr, u8 val) {
         // JOYPAD
         case P1_REG:   joypad_write(val); break;
         case SB_REG:   bus.ports.serial_data = val; break;
-        case SC_REG:   bus.ports.serial_control = val; break;
+        case SC_REG:
+            bus.ports.serial_control = val;
+            // STUB: NO LINK CABLE ATTACHED. ON A TRANSFER REQUEST USING THE
+            // INTERNAL CLOCK (BITS 7+0), IMMEDIATELY "COMPLETE" THE TRANSFER
+            // BY LATCHING 0xFF INTO SB, CLEARING THE START BIT, AND FIRING
+            // INT_SERIAL. PREVENTS GAMES THAT PROBE LINK FROM HANGING.
+            if ((val & 0x81) == 0x81) {
+                bus.ports.serial_data = 0xFF;
+                bus.ports.serial_control = val & 0x7F;
+                interrupt_req(INT_SERIAL);
+            }
+            break;
 
         // TIMER
         case DIV_REG:
@@ -183,4 +200,20 @@ void debug_dump_bootrom(u8 num_bytes) {
         LOG_DEBUG(LOG_BUS, "%02X ", bus.bootrom[i]);
     }
     LOG_DEBUG(LOG_BUS, "\n");
+}
+
+// PERSIST ONLY THE BYTES THAT CHANGE AT RUNTIME. BOOTROM IS LOADED FROM A
+// FILE AT STARTUP AND IMMUTABLE - SKIPPING IT KEEPS STATE FILES SMALLER AND
+// AVOIDS CLOBBERING IT ON LOAD.
+void bus_save_state(FILE* fp) {
+    fwrite(bus.wram, sizeof(bus.wram), 1, fp);
+    fwrite(bus.hram, sizeof(bus.hram), 1, fp);
+    fwrite(bus.io,   sizeof(bus.io),   1, fp);
+    fwrite(&bus.ports, sizeof(bus.ports), 1, fp);
+}
+void bus_load_state(FILE* fp) {
+    fread(bus.wram, sizeof(bus.wram), 1, fp);
+    fread(bus.hram, sizeof(bus.hram), 1, fp);
+    fread(bus.io,   sizeof(bus.io),   1, fp);
+    fread(&bus.ports, sizeof(bus.ports), 1, fp);
 }

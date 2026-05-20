@@ -20,5 +20,7 @@ void timer_init(void);
 void timer_tick(void);
 u8 timer_read(u16 addr);
 void timer_write(u16 addr, u8 val);
+void timer_save_state(FILE* fp);
+void timer_load_state(FILE* fp);
 
 #endif

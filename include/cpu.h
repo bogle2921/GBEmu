@@ -51,6 +51,10 @@ void cpu_step(void);
 u8 get_cpu_cycles(void);
 void reset_cpu_cycles(void);
 
+// SAVE STATE
+void cpu_save_state(FILE* fp);
+void cpu_load_state(FILE* fp);
+
 // CPU STATE ACCESS
 registers* get_registers();
 bool get_ime(void);

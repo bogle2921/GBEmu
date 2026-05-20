@@ -107,3 +107,6 @@ void timer_write(u16 addr, u8 val) {
             break;
     }
 }
+
+void timer_save_state(FILE* fp) { fwrite(&timer, sizeof(timer), 1, fp); }
+void timer_load_state(FILE* fp) { fread(&timer, sizeof(timer), 1, fp); }

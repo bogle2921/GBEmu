@@ -3,24 +3,28 @@
 #include "interrupt.h"
 #include "bus.h"
 #include "joypad.h"
+#include "cart.h"
+#include "ui.h"
+#include <string.h>
 
 static graphics_system graphics;
 
-// INITIAL COLOR PALETTE
+static SDL_HitTestResult SDLCALL sdl_hit_test_cb(SDL_Window* w,
+                                                 const SDL_Point* p,
+                                                 void* data) {
+    (void)data;
+    int win_w, win_h;
+    SDL_GetWindowSize(w, &win_w, &win_h);
+    return ui_hit_test(p->x, p->y, win_w, win_h);
+}
+
+// INITIAL PALETTE
 static const u32 DEFAULT_COLORS[4] = {
     0xFFFFFFFF,  // WHITE (00)
     0xFFAAAAAA,  // LIGHT GRAY (01) 
     0xFF555555,  // DARK GRAY (10)
     0xFF000000   // BLACK (11)
 };
-
-// REEEETRRROOOOO - UNCOMMENT AND COMMENT OUT THE ABOVE
-// static const u32 DEFAULT_COLORS[4] = {
-//     0xFF9BBC0F,  // LIGHTEST GREEN
-//     0xFF8BAC0F,  // LIGHT GREEN  
-//     0xFF306230,  // DARK GREEN
-//     0xFF0F380F   // DARKEST GREEN 
-// };
 
 static void update_palette(u8* palette_reg, u32* colors, u8 val) {
     *palette_reg = val;
@@ -32,10 +36,11 @@ static void update_palette(u8* palette_reg, u32* colors, u8 val) {
 }
 
 void graphics_cleanup() {
+    ui_shutdown();
     SDL_DestroyTexture(graphics.texture);
     SDL_DestroyRenderer(graphics.renderer);
     SDL_DestroyWindow(graphics.window);
-    
+
     if (graphics.debug_texture) {
         SDL_DestroyTexture(graphics.debug_texture);
     }
@@ -45,14 +50,14 @@ void graphics_cleanup() {
     if (graphics.debug_window) {
         SDL_DestroyWindow(graphics.debug_window);
     }
-    
+
     SDL_Quit();
 }
 
 #if DEBUG_WINDOW
 static u8 get_tile_pixel(u8 tile_idx, u8 x, u8 y) {
-    u16 tile_addr = (tile_idx * 16) + (y * 2);  // CALCULATE ADDRESS OF TILE DATA
-    
+    u16 tile_addr = (tile_idx * 16) + (y * 2);
+
     // READ TILE DATA BYTES
     u8 byte1 = read_from_bus(VRAM_START + tile_addr);
     u8 byte2 = read_from_bus(VRAM_START + tile_addr + 1);
@@ -65,115 +70,91 @@ static u8 get_tile_pixel(u8 tile_idx, u8 x, u8 y) {
 }
 #endif
 
-// RENDER BACKGROUND AND WINDOW
 static void render_background_line() {
-    // PREPARE Y-COORDINATE CALCULATIONS
+    // PREP Y-COORDINATE CALCULATIONS
     const u8 bg_y = (graphics.line + graphics.scy) & 0xFF; // CURRENT LINE IN BG MAP
     const u8 tile_row = bg_y / 8;       // CURRENT ROW IN TILE MAP
     const u8 tile_y_offset = bg_y % 8; // CURRENT Y OFFSET IN TILE
 
-    // PREPARE MAP ADDRESSES
+    // PREP MAP ADDRESSES
     const u16 BG_MAP_ADDRESSES[] = {0x9800, 0x9C00};
     const u16 bg_map_base = BG_MAP_ADDRESSES[(graphics.lcdc & LCDC_BG_MAP) >> 3];
 
-    // PREPARE TILE DATA ADDRESSES
     const u16 TILE_DATA_ADDRESSES[] = {0x8800, 0x8000};
     const u16 tile_data_base = TILE_DATA_ADDRESSES[(graphics.lcdc & LCDC_TILE_SELECT) >> 4];
     const bool is_signed_addressing = (tile_data_base == 0x8800);
 
-    // RENDER BACKGROUND IF ENABLED
+    // RENDER BG
+    
     if (graphics.lcdc & LCDC_BG_ENABLE) {
         for (int screen_x = 0; screen_x < SCREEN_WIDTH; screen_x++) {
-            // PREPARE X-COORDINATE CALCULATIONS
-            const u8 bg_x = (screen_x + graphics.scx) & 0xFF; // CURRENT X COORD IN BG
-            const u8 tile_col = bg_x / 8;      // CURRENT COL IN TILE MAP
-            const u8 tile_x_offset = bg_x % 8; // CURRENT X OFFSET IN TILE
+            const u8 bg_x = (screen_x + graphics.scx) & 0xFF;
+            const u8 tile_col = bg_x / 8;
+            const u8 tile_x_offset = bg_x % 8;
 
-            // CALCULATE TILE MAP ADDRESS AND FETCH TILE INDEX
             const u16 map_addr = bg_map_base + (tile_row * 32) + tile_col;
             u8 tile_idx = read_from_bus(map_addr);
 
-            // HANDLE SIGNED ADDRESSING IF NEEDED
             if (is_signed_addressing) {
                 tile_idx = ((i8)tile_idx + 128) & 0xFF;
             }
 
-            // CALCULATE PIXEL ADDRESS AND FETCH BYTES
             const u16 pixel_addr = tile_data_base + (tile_idx * 16) + (tile_y_offset * 2);
             const u8 low_byte = read_from_bus(pixel_addr);
             const u8 high_byte = read_from_bus(pixel_addr + 1);
 
-            // EXTRACT COLOR INDEX
             const u8 bit_pos = 7 - tile_x_offset;
             const u8 color_idx = ((high_byte >> bit_pos) & 1) << 1 | ((low_byte >> bit_pos) & 1);
 
-            // WRITE PIXEL TO FRAME BUFFER + REMEMBER BG INDEX FOR SPRITE PRIORITY
             graphics.frame_buffer[(graphics.line * SCREEN_WIDTH) + screen_x] = graphics.bg_colors[color_idx];
             graphics.bg_index_line[screen_x] = color_idx;
         }
     } else {
-        // BG DISABLED -> ALL PIXELS COUNT AS COLOR 0 FOR PRIORITY
         for (int x = 0; x < SCREEN_WIDTH; x++) graphics.bg_index_line[x] = 0;
     }
 
-    // RENDER WINDOW IF ENABLED AND WITHIN Y-BOUNDS
     if ((graphics.lcdc & LCDC_WINDOW_ENABLE) && graphics.wy <= graphics.line && graphics.wx < 167) {
-        // WINDOW HAS ITS OWN INTERNAL LINE COUNTER THAT ONLY ADVANCES
-        // ON SCANLINES THE WINDOW ACTUALLY RENDERED.
         const u8 window_y = graphics.window_line;
         const u8 tile_row = window_y / 8;
         const u8 tile_y_offset = window_y % 8;
         graphics.window_line++;
 
-        // PREPARE MAP ADDRESS
         const u16 window_map_base = BG_MAP_ADDRESSES[(graphics.lcdc & LCDC_WINDOW_MAP) >> 6];
 
         for (int screen_x = 0; screen_x < SCREEN_WIDTH; screen_x++) {
-            // CHECK IF PIXEL IS WITHIN WINDOW X-BOUNDS
             if (screen_x + 7 < graphics.wx) continue;
 
-            // CALCULATE WINDOW X-COORDINATE
             const u8 window_x = screen_x - (graphics.wx - 7);
             const u8 tile_col = window_x / 8;
             const u8 tile_x_offset = window_x % 8;
 
-            // CALCULATE TILE MAP ADDRESS AND FETCH TILE INDEX
             const u16 map_addr = window_map_base + (tile_row * 32) + tile_col;
             u8 tile_idx = read_from_bus(map_addr);
 
-            // HANDLE SIGNED ADDRESSING IF NEEDED
             if (is_signed_addressing) {
                 tile_idx = ((i8)tile_idx + 128);
             }
 
-            // CALCULATE PIXEL ADDRESS AND FETCH BYTES
             const u16 pixel_addr = tile_data_base + (tile_idx * 16) + (tile_y_offset * 2);
             const u8 low_byte = read_from_bus(pixel_addr);
             const u8 high_byte = read_from_bus(pixel_addr + 1);
 
-            // EXTRACT COLOR INDEX
             const u8 bit_pos = 7 - tile_x_offset;
             const u8 color_idx = ((high_byte >> bit_pos) & 1) << 1 | ((low_byte >> bit_pos) & 1);
 
-            // WRITE PIXEL TO FRAME BUFFER + UPDATE BG INDEX
             graphics.frame_buffer[(graphics.line * SCREEN_WIDTH) + screen_x] = graphics.bg_colors[color_idx];
             graphics.bg_index_line[screen_x] = color_idx;
         }
     }
 }
 
-// RENDER SPRITES FOR THE CURRENT SCANLINE.
-// DMG RULES:
-//   1) AT MOST 10 SPRITES PER SCANLINE - PICKED IN OAM ORDER, NOT BY X.
-//   2) LOWER X DRAWS ON TOP OF HIGHER X. WITHIN EQUAL X, LOWER OAM INDEX WINS.
-//   3) IF SPRITE FLAG BIT 7 (BG PRIORITY) IS SET, THE SPRITE IS HIDDEN
-//      WHEREVER THE BG COLOR INDEX IS NON-ZERO.
+
+// RENDER SPRITES FOR CURRENT SCAN LINE
 static void render_sprites_line() {
     if (!(graphics.lcdc & LCDC_OBJ_ENABLE)) return;
 
     const u8 sprite_height = (graphics.lcdc & LCDC_OBJ_SIZE) ? 16 : 8;
 
-    // STEP 1: PICK FIRST 10 VISIBLE SPRITES IN OAM ORDER
     sprite line_sprites[SPRITES_PER_LINE];
     int sprite_count = 0;
 
@@ -184,9 +165,6 @@ static void render_sprites_line() {
         }
     }
 
-    // STEP 2: STABLE-SORT ASCENDING BY X SO WE CAN ITERATE IN REVERSE BELOW.
-    // STABLE SORT PRESERVES OAM ORDER WHEN X IS EQUAL, AND DRAWING IN REVERSE
-    // MEANS LOWER OAM INDEX (DRAWN LAST AMONG EQUAL-X) ENDS UP ON TOP.
     for (int i = 1; i < sprite_count; i++) {
         sprite key = line_sprites[i];
         int j = i - 1;
@@ -197,7 +175,6 @@ static void render_sprites_line() {
         line_sprites[j + 1] = key;
     }
 
-    // STEP 3: DRAW HIGHEST-X FIRST, LOWEST-X LAST (LOWEST X ENDS UP ON TOP)
     for (int i = sprite_count - 1; i >= 0; i--) {
         const sprite* s = &line_sprites[i];
         const int sprite_x = (int)s->x - 8;
@@ -213,9 +190,9 @@ static void render_sprites_line() {
 
         u8 tile_index = s->tile;
         if (sprite_height == 16) {
-            tile_index &= 0xFE;            // EVEN TILE BASE
+            tile_index &= 0xFE;
             if (sprite_line >= 8) {
-                tile_index++;              // BOTTOM HALF -> NEXT TILE
+                tile_index++;
                 sprite_line -= 8;
             }
         }
@@ -230,9 +207,8 @@ static void render_sprites_line() {
 
             const u8 bit_pos = (s->flags & 0x20) ? px : (7 - px);
             const u8 color_idx = (((high_byte >> bit_pos) & 1) << 1) | ((low_byte >> bit_pos) & 1);
-            if (color_idx == 0) continue;  // SPRITE-TRANSPARENT
+            if (color_idx == 0) continue;
 
-            // BG PRIORITY: SPRITE HIDDEN WHERE BG INDEX IS 1..3
             if (bg_priority && graphics.bg_index_line[screen_x] != 0) continue;
 
             const int fb_index = (graphics.line * SCREEN_WIDTH) + screen_x;
@@ -241,9 +217,7 @@ static void render_sprites_line() {
     }
 }
 
-// RENDER A SINGLE SCANLINE
 void render_line() {
-    // EXIT EARLY IF LCD IS DISABLED OR LINE IS INVALID
     if (!(graphics.lcdc & LCDC_ENABLE)) {
         const int fb_start = graphics.line * SCREEN_WIDTH;
         const u32 white = graphics.bg_colors[0];
@@ -252,115 +226,175 @@ void render_line() {
         }
         return;
     }
-    
+
     if (graphics.line >= SCREEN_HEIGHT) return;
 
-    // CLEAR THE CURRENT LINE TO BACKGROUND COLOR 0
     const u32 bg_color0 = graphics.bg_colors[0];
     const int fb_start = graphics.line * SCREEN_WIDTH;
     memset(&graphics.frame_buffer[fb_start], bg_color0, SCREEN_WIDTH * sizeof(u32));
 
-    // RENDER THE BACKGROUND, WINDOW, AND SPRITES
     render_background_line();
     render_sprites_line();
 }
 
+static SDL_Rect compute_gb_dst_rect(void) {
+    int win_w, win_h;
+    SDL_GetWindowSize(graphics.window, &win_w, &win_h);
+    return ui_screen_rect(win_w, win_h);
+}
+
 void draw_frame() {
 #if DEBUG_WINDOW
-    // FRAME COUNTER FOR DEBUG WINDOW PACING
     static int frame_count = 0;
     frame_count++;
 #endif
 
-    // CLEAR RENDERER WITH WHITE BACKGROUND FOR EMPTY AREAS
-    SDL_SetRenderDrawColor(graphics.renderer, 255, 255, 255, 255);
+    ui_new_frame();
+
+    int win_w, win_h;
+    SDL_GetWindowSize(graphics.window, &win_w, &win_h);
+
+    SDL_SetRenderDrawColor(graphics.renderer, 0, 0, 0, 255);
     SDL_RenderClear(graphics.renderer);
 
-    // LOCK TEXTURE FOR PIXEL ACCESS
-    void* pixels;
-    int pitch;
-    if (SDL_LockTexture(graphics.texture, NULL, &pixels, &pitch) < 0) {
-        LOG_ERROR(LOG_GRAPHICS, "Failed to lock texture: %s\n", SDL_GetError());
-        return;
+    ui_draw_chrome_under(graphics.renderer, win_w, win_h);
+
+    SDL_Rect dst = compute_gb_dst_rect();
+
+    if (c.rom_data) {
+        void* pixels;
+        int pitch;
+        if (SDL_LockTexture(graphics.texture, NULL, &pixels, &pitch) < 0) {
+            LOG_ERROR(LOG_GRAPHICS, "Failed to lock texture: %s\n", SDL_GetError());
+            return;
+        }
+        memcpy(pixels, graphics.frame_buffer, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
+        SDL_UnlockTexture(graphics.texture);
+        SDL_RenderCopy(graphics.renderer, graphics.texture, NULL, &dst);
+    } else {
+        ui_draw_splash(graphics.renderer, dst);
     }
 
-    // COPY FRAME BUFFER TO TEXTURE
-    memcpy(pixels, graphics.frame_buffer, SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
+    ui_render();
 
-    // UNLOCK TEXTURE
-    SDL_UnlockTexture(graphics.texture);
+    ui_draw_chrome_over(graphics.renderer, win_w, win_h);
 
-    // COPY TEXTURE TO RENDERER
-    SDL_RenderCopy(graphics.renderer, graphics.texture, NULL, NULL);
-
-    // PRESENT RENDERER TO THE WINDOW
     SDL_RenderPresent(graphics.renderer);
 
 #if DEBUG_WINDOW
-    // PERIODICALLY UPDATE DEBUG WINDOW
     if (frame_count % 30 == 0) {
         update_debug_window();
     }
 #endif
 }
 
+static SDL_Surface* make_app_icon(void) {
+    const int W = 64, H = 64;
+    static u32 px[64 * 64];
+
+    const u32 BG     = 0xFF1F1F2E;
+    const u32 SHELL  = 0xFFCCCCD0;
+    const u32 SCREEN = 0xFF9BBC0F;
+    const u32 INK    = 0xFF0F380F;
+
+    for (int i = 0; i < W * H; i++) px[i] = BG;
+
+    for (int y = 3; y < 61; y++) {
+        for (int x = 3; x < 61; x++) {
+            int dx = (x < 11) ? (11 - x) : (x > 52 ? x - 52 : 0);
+            int dy = (y < 11) ? (11 - y) : (y > 52 ? y - 52 : 0);
+            if (dx * dx + dy * dy <= 8 * 8) px[y * W + x] = SHELL;
+        }
+    }
+
+    for (int y = 10; y < 38; y++)
+        for (int x = 12; x < 52; x++)
+            px[y * W + x] = SCREEN;
+
+    static const u8 G[7] = {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0E};
+    static const u8 B[7] = {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E};
+    int gx = 18, gy = 16, bx = 30, by = 16;
+    for (int r = 0; r < 7; r++) {
+        for (int c = 0; c < 5; c++) {
+            if (G[r] & (1 << (4 - c))) {
+                px[(gy + r) * W + (gx + c)] = INK;
+                px[(gy + r) * W + (gx + c) + 1] = INK;
+            }
+            if (B[r] & (1 << (4 - c))) {
+                px[(by + r) * W + (bx + c)] = INK;
+                px[(by + r) * W + (bx + c) + 1] = INK;
+            }
+        }
+    }
+
+    for (int y = 43; y < 53; y++) {
+        for (int x = 35; x < 55; x++) {
+            int dxA = x - 41, dyA = y - 48;
+            int dxB = x - 51, dyB = y - 46;
+            if (dxA * dxA + dyA * dyA <= 9) px[y * W + x] = 0xFFB04060;
+            if (dxB * dxB + dyB * dyB <= 9) px[y * W + x] = 0xFFB04060;
+        }
+    }
+    for (int y = 44; y < 53; y++) px[y * W + 14] = 0xFF222226;
+    for (int y = 44; y < 53; y++) px[y * W + 15] = 0xFF222226;
+    for (int y = 44; y < 53; y++) px[y * W + 16] = 0xFF222226;
+    for (int x = 11; x < 20; x++) px[48 * W + x] = 0xFF222226;
+    for (int x = 11; x < 20; x++) px[49 * W + x] = 0xFF222226;
+
+    return SDL_CreateRGBSurfaceFrom(
+        px, W, H, 32, W * sizeof(u32),
+        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+}
+
+void graphics_update_title_for_cart(void) {
+    if (!graphics.window || !c.filename[0]) return;
+    const char* base = strrchr(c.filename, '/');
+    base = base ? base + 1 : c.filename;
+    char title[1100];
+    snprintf(title, sizeof(title), "%s - %s", EMU_TITLE, base);
+    char* dot = strrchr(title, '.');
+    if (dot && dot > strrchr(title, '/')) *dot = '\0';
+    SDL_SetWindowTitle(graphics.window, title);
+}
+
 void graphics_init() {
+    SDL_SetHint(SDL_HINT_APP_NAME, EMU_TITLE);
+#ifdef SDL_HINT_VIDEO_WAYLAND_WMCLASS
+    SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_WMCLASS, EMU_APP_ID);
+#endif
+#ifdef SDL_HINT_VIDEO_X11_WMCLASS
+    SDL_SetHint(SDL_HINT_VIDEO_X11_WMCLASS, EMU_APP_ID);
+#endif
+
     // INIT SDL WITH ERROR CHECKING
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         LOG_ERROR(LOG_GRAPHICS, "SDL INIT FAILED: %s\n", SDL_GetError());
         exit(1);
     }
 
-    // INIT MEMORY DEFAULTS 
-    memset(&graphics, 0, sizeof(graphics_system));
-    memset(graphics.vram, 0, VRAM_BANK_SIZE);
-    memset(graphics.oam, 0, sizeof(graphics.oam));
+    // PPU STATE INIT - SHARED WITH RESET
+    graphics_reset();
     memset(graphics.frame_buffer, 0xFF, sizeof(graphics.frame_buffer));
 
-    // COMMON INITS FIRST
-    graphics.line = 0;
-    graphics.mode = MODE_HBLANK;
-    graphics.mode_clock = 0;
-    graphics.scy = 0x00;
-    graphics.scx = 0x00;
-    graphics.ly = 0x00;
-    graphics.lyc = 0x00;
-    graphics.dma = 0x00;
-    graphics.wy = 0x00;
-    graphics.wx = 0x00;
-    graphics.window_line = 0;
+    Uint32 win_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI |
+                       SDL_WINDOW_BORDERLESS;
+#if WINDOW_RESIZABLE
+    win_flags |= SDL_WINDOW_RESIZABLE;
+#endif
+#if WINDOW_FULLSCREEN
+    win_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
 
-    if (get_bootrom_enable()) {
-        // BOOTROM START VALUES
-        graphics.lcdc = 0x00;
-        graphics.stat = 0x00;
-        graphics.bgp = 0x00;
-        graphics.obp0 = 0x00;
-        graphics.obp1 = 0x00;
-    } else {
-        // POST-BOOT VALUES 
-        graphics.lcdc = 0x91;
-        graphics.stat = 0x85;
-        graphics.bgp = 0xFC;
-        graphics.obp0 = 0xFF; 
-        graphics.obp1 = 0xFF;
-    }
+    int default_w, default_h;
+    ui_default_window_size(&default_w, &default_h);
 
-    // INIT PALETTES
-    update_palette(&graphics.bgp, graphics.bg_colors, graphics.bgp);
-    update_palette(&graphics.obp0, graphics.sprite_colors[0], graphics.obp0);
-    update_palette(&graphics.obp1, graphics.sprite_colors[1], graphics.obp1);
-
-
-    // MAIN WINDOW SETUP
-    int scale = 3;
     graphics.window = SDL_CreateWindow(
-        "GBEmu",
+        EMU_TITLE,
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        SCREEN_WIDTH * scale,
-        SCREEN_HEIGHT * scale,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI
+        default_w,
+        default_h,
+        win_flags
     );
 
     if (!graphics.window) {
@@ -369,17 +403,30 @@ void graphics_init() {
         exit(1);
     }
 
-    graphics.renderer = SDL_CreateRenderer(graphics.window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-        
+    // SET ICON. SDL COPIES THE SURFACE, SO WE FREE IT IMMEDIATELY.
+    SDL_Surface* icon = make_app_icon();
+    if (icon) {
+        SDL_SetWindowIcon(graphics.window, icon);
+        SDL_FreeSurface(icon);
+    }
+    int min_w, min_h;
+    ui_min_window_size(&min_w, &min_h);
+    SDL_SetWindowMinimumSize(graphics.window, min_w, min_h);
+
+    graphics_update_title_for_cart();
+
+    Uint32 rend_flags = SDL_RENDERER_ACCELERATED;
+#if WINDOW_VSYNC
+    rend_flags |= SDL_RENDERER_PRESENTVSYNC;
+#endif
+    graphics.renderer = SDL_CreateRenderer(graphics.window, -1, rend_flags);
+
     if (!graphics.renderer) {
         LOG_ERROR(LOG_GRAPHICS, "MAIN RENDERER CREATE FAILED: %s\n", SDL_GetError());
         SDL_DestroyWindow(graphics.window);
         SDL_Quit();
         exit(1);
     }
-
-    SDL_RenderSetScale(graphics.renderer, scale, scale);
 
     graphics.texture = SDL_CreateTexture(graphics.renderer,
         SDL_PIXELFORMAT_ARGB8888,
@@ -393,6 +440,14 @@ void graphics_init() {
         SDL_Quit();
         exit(1);
     }
+
+    // CLEAR LETTERBOX BARS TO BLACK SO THEY DON'T FLICKER WITH STALE PIXELS
+    SDL_SetRenderDrawColor(graphics.renderer, 0, 0, 0, 255);
+
+    // INIT UI - OWNS THE MENU BAR AND PANELS
+    ui_init(graphics.window, graphics.renderer);
+
+    SDL_SetWindowHitTest(graphics.window, sdl_hit_test_cb, NULL);
 
 #if DEBUG_WINDOW
     // DEBUG WINDOW SETUP - TILE ATLAS VIEWER
@@ -500,6 +555,7 @@ void graphics_tick() {
                 graphics.ly = 0;
                 graphics.window_line = 0;
                 graphics.stat = (graphics.stat & ~0x03) | MODE_OAM;
+                if (graphics.stat & 0x20) interrupt_req(INT_LCD);  // MODE 2 STAT
             }
         }
         return;
@@ -514,6 +570,7 @@ void graphics_tick() {
         if (graphics.mode != MODE_OAM) {
             graphics.mode = MODE_OAM;
             graphics.stat = (graphics.stat & ~0x03) | MODE_OAM;
+            if (graphics.stat & 0x20) interrupt_req(INT_LCD);  // MODE 2 STAT
         }
     }
     else if (graphics.mode_clock < PIXEL_END) {
@@ -545,9 +602,6 @@ void graphics_tick() {
     }
 }
 
-// KEY -> GB BUTTON MAPPING IS CONFIGURED IN include/config.h
-// EACH GB BUTTON HAS A PRIMARY AND ALTERNATE KEY. UNASSIGNED SLOTS USE
-// SDLK_UNKNOWN AND ARE IGNORED HERE.
 static gb_button key_to_button(SDL_Keycode k) {
     if (k == SDLK_UNKNOWN) return (gb_button)0;
 
@@ -563,9 +617,20 @@ static gb_button key_to_button(SDL_Keycode k) {
 }
 
 void handle_events() {
+    ui_input_begin();
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
+        // GIVE UI FIRST CRACK. IF IT CONSUMES THE EVENT, SKIP EMU HANDLING.
+        if (ui_handle_event(&event)) continue;
+
+        if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)
+            && ui_wants_keyboard()
+            && event.key.keysym.sym != KEY_GB_QUIT
+            && event.key.keysym.sym != KEY_TOGGLE_FULLSCREEN) {
+            continue;
+        }
+
         switch (event.type)
         {
             case SDL_QUIT:
@@ -576,6 +641,14 @@ void handle_events() {
                 if (event.key.repeat) break;  // IGNORE OS KEY-REPEAT
                 if (event.key.keysym.sym == KEY_GB_QUIT) {
                     get_gb()->die = true;
+                    break;
+                }
+                if (event.key.keysym.sym == KEY_TOGGLE_FULLSCREEN) {
+                    // TOGGLE BORDERLESS FULLSCREEN
+                    Uint32 flags = SDL_GetWindowFlags(graphics.window);
+                    bool is_fs = (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+                    SDL_SetWindowFullscreen(graphics.window,
+                        is_fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
                     break;
                 }
                 {
@@ -609,6 +682,7 @@ void handle_events() {
                 break;
         }
     }
+    ui_input_end();
 }
 
 // MEMORY ACCESS
@@ -727,41 +801,33 @@ void lcd_write(u16 addr, u8 val) {
 
 void update_debug_window() {
 #if !DEBUG_WINDOW
-    // COMPILED OUT WHEN DEBUG_WINDOW=0 IN config.h
     return;
 #else
     static u32 debug_buffer[256 * 256];
     static int frame_count = 0;
     frame_count++;
 
-    // CLEAR BUFFER TO A BASE COLOR
     for (int i = 0; i < 256 * 256; i++) {
-        debug_buffer[i] = 0xFF333333;  // DARK GRAY
+        debug_buffer[i] = 0xFF333333;
     }
 
-    // DRAW TILE GRID
     for (int ty = 0; ty < 32; ty++) {
         for (int tx = 0; tx < 16; tx++) {
-            // DRAW TILE BORDER
             int base_x = tx * 8;
             int base_y = ty * 8;
 
-            // HIGHLIGHT GRID IN A PATTERN
             u32 border_color = ((tx + ty) % 2) ? 0xFF666666 : 0xFF444444;
 
-            // DRAW HORIZONTAL GRID LINES
             for (int x = 0; x < 8; x++) {
                 debug_buffer[base_y * 256 + base_x + x] = border_color;
                 debug_buffer[(base_y + 7) * 256 + base_x + x] = border_color;
             }
 
-            // DRAW VERTICAL GRID LINES
             for (int y = 0; y < 8; y++) {
                 debug_buffer[(base_y + y) * 256 + base_x] = border_color;
                 debug_buffer[(base_y + y) * 256 + base_x + 7] = border_color;
             }
 
-            // DRAW TILE CONTENT
             int tile_idx = ty * 16 + tx;
             for (int y = 0; y < 8; y++) {
                 for (int x = 0; x < 8; x++) {
@@ -772,13 +838,11 @@ void update_debug_window() {
         }
     }
 
-    // UPDATE TEXTURE IMMEDIATELY
     SDL_UpdateTexture(graphics.debug_texture, NULL, debug_buffer, 256 * sizeof(u32));
     SDL_RenderClear(graphics.debug_renderer);
     SDL_RenderCopy(graphics.debug_renderer, graphics.debug_texture, NULL, NULL);
     SDL_RenderPresent(graphics.debug_renderer);
 
-    // LOG EVERY 60TH FRAME
     if (frame_count % 60 == 0) {
         LOG_TRACE(LOG_GRAPHICS, "Updated debug window frame %d\n", frame_count);
     }
@@ -791,4 +855,34 @@ void dump_frame_buffer_sample() {
         LOG_TRACE(LOG_GRAPHICS, "%08X ", graphics.frame_buffer[i]);
         if ((i + 1) % 4 == 0) LOG_TRACE(LOG_GRAPHICS, "\n");
     }
+}
+
+#include <stddef.h>
+
+void graphics_reset(void) {
+    const size_t saveable = offsetof(graphics_system, window);
+    memset(&graphics, 0, saveable);
+    graphics.mode = MODE_HBLANK;
+
+    if (get_bootrom_enable()) {
+    } else {
+        graphics.lcdc = 0x91;
+        graphics.stat = 0x85;
+        graphics.bgp  = 0xFC;
+        graphics.obp0 = 0xFF;
+        graphics.obp1 = 0xFF;
+    }
+
+    update_palette(&graphics.bgp,  graphics.bg_colors,        graphics.bgp);
+    update_palette(&graphics.obp0, graphics.sprite_colors[0], graphics.obp0);
+    update_palette(&graphics.obp1, graphics.sprite_colors[1], graphics.obp1);
+}
+
+void graphics_save_state(FILE* fp) {
+    const size_t saveable = offsetof(graphics_system, window);
+    fwrite(&graphics, saveable, 1, fp);
+}
+void graphics_load_state(FILE* fp) {
+    const size_t saveable = offsetof(graphics_system, window);
+    fread(&graphics, saveable, 1, fp);
 }

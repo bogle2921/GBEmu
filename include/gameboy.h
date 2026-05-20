@@ -29,4 +29,10 @@ gameboy* get_gb();
 void set_bootrom_enable(bool enable);
 bool get_bootrom_enable();
 
+// UI ACTIONS - ALL RETURN TRUE ON SUCCESS
+bool gameboy_save_state(int slot);   // slot 1..4, writes <rom>.s<slot>
+bool gameboy_load_state(int slot);
+bool gameboy_reset(void);            // RE-INIT FOR CURRENTLY-LOADED CART
+bool gameboy_load_rom(const char* path);  // LOAD A NEW CART, RESET
+
 #endif

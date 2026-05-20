@@ -64,3 +64,6 @@ u8 get_interrupt_enable() {
 void set_interrupt_enable(u8 enable) {
     interrupt.enable = enable;
 }
+
+void interrupt_save_state(FILE* fp) { fwrite(&interrupt, sizeof(interrupt), 1, fp); }
+void interrupt_load_state(FILE* fp) { fread(&interrupt, sizeof(interrupt), 1, fp); }

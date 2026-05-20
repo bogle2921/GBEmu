@@ -61,14 +61,19 @@ struct cartridge {
    bool ram_enabled;
    bool has_battery;
    bool has_rtc;
-   u8 current_rom_bank;
-   u8 current_ram_bank; 
+   u16 current_rom_bank;   // u16 - MBC5 USES 9 BITS (UP TO 512 BANKS)
+   u8 current_ram_bank;
    u8 banking_mode;
 
-   // RTC STATE (MBC3)
-   u8 rtc_reg[5];    // S,M,H,DL,DH - NO IDEA WHAT THESE ARE USED FOR
+   // RTC STATE (MBC3 with timer)
+   // rtc_reg[0..4]: SEC, MIN, HOUR, DAY_LO, DAY_HI
+   //   DAY_HI bit 0 = day MSB, bit 6 = halt, bit 7 = day-counter carry.
+   // rtc_reg IS THE LATCHED/VISIBLE VIEW; rtc_last IS THE HOST CLOCK AT THE
+   // LAST LATCH SO WE CAN ADVANCE BY THE DELTA NEXT TIME.
+   u8 rtc_reg[5];
    bool rtc_latched;
    time_t rtc_last;
+   u8 rtc_latch_last;   // LAST VALUE WRITTEN TO THE 0x6000-0x7FFF LATCH REG
 
    // TODO: DYNAMICALLY SET RENDERING CLOCK MODES BASED ON COLOR MODE
    // CGB
@@ -99,6 +104,13 @@ bool load_battery(void);
 
 // FREES ROM/RAM AND PERSISTS BATTERY-BACKED SAVE
 void cart_cleanup(void);
+
+// RESET BANKING STATE; ROM/RAM ALLOCATIONS UNTOUCHED
+void cart_reset(void);
+
+// SAVE STATE: BANKING STATE + CART RAM CONTENTS (NOT ROM, NOT FILENAME)
+void cart_save_state(FILE* fp);
+void cart_load_state(FILE* fp);
 
 // GETTERS/SETTERS
 // get_cart_mode(void);
